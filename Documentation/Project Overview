@@ -1,42 +1,47 @@
-Multi-ISA Comparative Analysis: Validating I/O Saturation and Memory Wall Deltas across the Edge-to-Core Continuum
+Empirical Analysis of the Memory Wall: Cross-Platform Performance Scaling under SIFI-Induced Stress
+or
+Enterprise ISA Resilience: Validating I/O Saturation and Memory Wall Deltas in Power10 vs. Commodity Architectures
+*title yet to be confirmed with Advisor
 
 1. Executive Summary
-The objective of this project is to develop an automated validation framework that characterizes the performance and resilience deltas between s390x, x86, and ARM64 environments. Rather than focusing on raw compute speed, this testbench identifies "workload tipping points", specific thresholds where the LinuxONE’s specialized I/O subsystems and on-chip accelerators (CPACF/NNPA) justify their architectural overhead compared to commodity hardware.
-The project utilizes a Tri-Architecture Validation strategy:
-Multi-Platform Delta Analysis: Quantifying the efficiency gap between enterprise (s390x) and commodity (x86/ARM64) systems.
-Resilience Quantification: Utilizing Software-Implemented Fault Injection (SIFI) to measure how enterprise hardware recovers from systemic stress compared to standard consumer-grade systems.
+The goal of this project is to develop an automated validation framework that identifies "Workload Tipping Points", the specific thresholds where enterprise-grade hardware (IBM Power) justifies its architectural cost over commodity hardware (x86/ARM64). By measuring I/O saturation and memory bandwidth deltas, this project quantifies the "Mainframe-class" reliability of Power Systems in a modern, data-heavy world.
+The Strategy:
+•	Performance Scaling: Comparing the Open Memory Interface (OMI) and Matrix Math Accelerator (MMA) of Power10 against standard DDR5/AVX-512 implementations.
+•	SIFI Resilience: Using Software-Implemented Fault Injection to prove that enterprise firmware (PowerVM) recovers faster from systemic stress than consumer-grade OS kernels.
 
-2. Technical Pillars & Scope
-The framework is built upon three engineering pillars designed to map directly to IBM Systems Engineering requirements:
-Pillar	Activity	Engineering Goal
-Pillar 1: Architectural Profiling	Benchmarking CISC vs. RISC instruction sets via sysbench and Python wrappers.	Track A: Identify "tipping points" where s390x scales linearly while x86/ARM64 hit architectural bottlenecks.
-Pillar 2: I/O & Accelerator Offload	High-concurrency storage stress (fio) and cryptographic acceleration tests.	Track B: Quantify the "Turbo Button" effect—measuring throughput deltas when offloading to CPACF or NNPA.
-Pillar 3: Resilience & SIFI	Injecting "bad path" scenarios (signal-based interrupts, memory pressure, and network latency).	Fault Injection: Use SIFI to quantify the recovery time and stability of enterprise hardware vs. commodity control groups.
+2. The Tri-Architecture Testing Lab
+To ensure results are statistically significant, the framework will execute identical stress tests across three distinct tiers:
+Tier	      Architecture	Hardware Example	Access Strategy
+Edge        ARM64	        Raspberry Pi 5	  Local Hardware
+Commodity	  x86_64	      AMD Laptop	      Local Hardware
+Enterprise	ppc64le	      IBM Power10      	OSU OpenPower Lab / IBM PowerVS
 
-3. The Tri-Architecture Validation Strategy
-Track A: Workload Tipping Points (s390x vs. x86 vs. ARM64)
-This track establishes the "Mainframe Advantage." By running identical workloads across the LinuxONE partition, an x86 laptop, and a Raspberry Pi 5, we identify the exact saturation point where commodity hardware fails to maintain deterministic performance.
-Primary Metric: Throughput () and Latency () variance under exponential concurrency scaling.
-Control Group: Pi 5 (ARM64) represents the power-efficient baseline; x86 represents the standard compute baseline.
-Track B: SIFI & Resilience Quantification
-Using Software-Implemented Fault Injection, we simulate systemic failures (e.g., dropped packets via tc, process interrupts, or memory leaks) to observe the "graceful degradation" of the s390x.
-Primary Metric: Mean Time to Recovery (MTTR) and system availability under stress.
-Comparison: Measuring how the LinuxONE’s enterprise-grade firmware and hardware-level error handling outpace commodity OS recovery.
+3. Technical Pillars & Engineering Goals
+Pillar 1: The "Memory Wall" Challenge
+•	Activity: Benchmarking memory-to-CPU throughput using stream and sysbench.
+•	Goal: Identify the -thread count where x86/ARM64 latencies spike due to memory bus saturation, while Power10 maintains linear scaling.
+Pillar 2: SIFI & Resilience Validation
+•	Activity: Injecting simulated system faults, such as resource contention and unrelated process interference, using Software-Implemented Fault Injection (SIFI) tools.
+•	Goal: Measure the Mean Time to Recovery (MTTR) and identify the "Tipping Point" where Power10’s hardware-level error handling provides more predictable recovery than consumer-grade OS kernels.
+Pillar 3: Hardware Acceleration (MMA vs. SIMD) - OPTIONAL
+•	Activity: Executing high-concurrency matrix-math and cryptographic workloads using libraries optimized for both Power10 and commodity architectures.
+•	Goal: Quantify the throughput delta of the Power10 Matrix Math Accelerator (MMA) versus standard SIMD (AVX/NEON) instructions to prove Power10’s superior efficiency in AI and security tasks.
 
 4. Semester Roadmap (Spring 2026)
-Phase	Timeline	Key Activities & Milestones
-Phase 1: Foundation:	February	Build hardware-agnostic logic; Baseline testing on Raspberry Pi 5 & x86 Laptop.
-Phase 2: Integration:	March	Develop Python Test Harness; Map requirements to the SE-5344 Traceability Matrix (RTM); Configure s390x hardware accelerators.
-Phase 3: Validation:	April	Execute Tri-Architecture benchmarking; SIFI Script Implementation.
-Phase 4: Closure:	May	Finalize Architecture-Aware Analysis Report; Document "Tipping Point" data.
+•	Phase 1: Foundation (February): * Establish baseline telemetry on Pi 5 and x86 Laptop.
+o	Pivot: Request access to the Oregon State University (OSU) OpenPower Lab
+•	Phase 2: The Harness (March): * Finalize the Python Test Harness (Architecture-aware logic).
+o	Map requirements to the IBM Power Systems Assurance quality standards.
+•	Phase 3: Validation (April): * Execute SIFI scripts on Power10.
+o	Collect "Tipping Point" data and draw conclusions
+•	Phase 4: Closure (May): * Deliver the Architecture-Aware Analysis Report.
 
-5. Key Deliverables
-Automated Validation Harness: A modular GitHub repository with Python scripts capable of multi-platform execution and data aggregation.
-Tipping Point Analysis Report: A formal document featuring data visualizations (heatmaps/scatter plots) showing where s390x outperforms x86 and ARM64.
-SIFI Resilience Log: A detailed log documenting "bad path" recovery results, comparing enterprise vs. commodity hardware stability.
+5. Final Deliverables: What do you hand in?
+1.	Automated Validation Harness: A GitHub repo with Python scripts that can "stress-test" any Linux server and output a standardized CSV of performance metrics.
+2.	The "Tipping Point" Data Visualization: A series of scatter plots and heatmaps showing exactly where the "Commodity" architectures fail and "Enterprise" hardware continues to scale.
+3.	The Resilience Log: A detailed comparison of how the system handles faults (e.g., "Under a 90% memory load, Power10 recovered in 1.2s vs. 4.5s for x86").
+4.	Hardware Assurance Portfolio: A document explaining how your testing methodology ensures the reliability of Power Systems—perfect for your internship manager.
 
-6. Systems Engineering Justification: Why s390x?
-I/O Hub Superiority: While x86 and ARM64 are compute-heavy, the s390x is architected as a massive I/O hub, essential for high-velocity transactional data.
-Resilience by Design: Commodity systems rely on software for recovery; s390x integrates recovery into the silicon (RAIM, lock-step processing).
-Mission Criticality: This framework validates the hardware powering the global economy, from banking to large-scale systems engineering.
+WHY IS THIS IMPORTANT?
+This project is an Automated Hardware Assurance Framework that identifies the "Workload Tipping Points" where commodity architectures (x86 and ARM64) succumb to the Memory Wall, while enterprise silicon (IBM Power10) maintains deterministic performance. By utilizing Software-Implemented Fault Injection (SIFI), we are moving beyond raw speed to quantify Resilience and Mean Time to Recovery (MTTR) under systemic stress. This is critical because, in mission-critical environments like global banking or real-time AI, the "best" system is not the one that is fastest under ideal conditions, but the one that provides the most predictable degradation when pushed to its architectural limits.
 
