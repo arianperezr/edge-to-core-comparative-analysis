@@ -1,0 +1,108 @@
+================================================================================
+FABRIC GUIDE — Running the harness on Pi 5 and Power10 from your laptop
+================================================================================
+
+Use Fabric to run the benchmark on remote hosts (Raspberry Pi 5, Power10) over
+SSH from a single machine. Remotes must have the repo and the Docker image
+built; Fabric only runs commands on them.
+
+--------------------------------------------------------------------------------
+1. PREREQUISITES
+--------------------------------------------------------------------------------
+
+On your laptop (x86):
+  - Python 3 with pip
+  - Fabric 3.x:  pip install fabric
+  - SSH access to Pi 5 and Power10 (key-based auth recommended)
+
+On each remote (Pi 5, Power10):
+  - Docker installed
+  - Repo cloned/copied to the same path on every host (e.g. ~/edge-to-core-comparative-analysis)
+  - Image built once:  docker build -t assurance-harness -f testbenches/Dockerfile .
+
+--------------------------------------------------------------------------------
+2. ONE-TIME SETUP ON EACH REMOTE
+--------------------------------------------------------------------------------
+
+SSH into each host and run (or use Fabric to run these once):
+
+  # Clone the repo (or rsync from your laptop)
+  git clone <your-repo-url> ~/edge-to-core-comparative-analysis
+  cd ~/edge-to-core-comparative-analysis
+
+  # Build the image for this machine's architecture (arm64 on Pi, ppc64le on Power10)
+  docker build -t assurance-harness -f testbenches/Dockerfile .
+
+Use the same path (e.g. ~/edge-to-core-comparative-analysis) on Pi 5 and
+Power10 so Fabric tasks that mount results work without changes. If you use
+a different path, set REMOTE_REPO_PATH in core/fabfile.py.
+
+--------------------------------------------------------------------------------
+3. RUNNING THE BENCH FROM YOUR LAPTOP
+--------------------------------------------------------------------------------
+
+From the repo root on your laptop:
+
+  # List available tasks
+  fab -f core/fabfile.py --list
+
+  # Run one bench iteration on one host (no results saved on remote disk)
+  fab -f core/fabfile.py -H pi@raspberrypi run_bench
+  fab -f core/fabfile.py -H user@power10-host run_bench
+
+  # Run with SIFI (fault injection)
+  fab -f core/fabfile.py -H pi@raspberrypi run_bench --sifi
+
+  # Run on multiple hosts in sequence
+  fab -f core/fabfile.py -H pi@raspberrypi,user@power10-host run_bench
+
+  # Run one iteration and write results into the remote repo's results/ dir
+  # (assumes repo on remote at ~/edge-to-core-comparative-analysis)
+  fab -f core/fabfile.py -H pi@raspberrypi run_bench_with_results
+
+Replace pi@raspberrypi and user@power10-host with your SSH user and hostnames
+(or IPs). Use a fabric.yaml in the repo root if you prefer to name hosts
+instead of -H (see section 5).
+
+--------------------------------------------------------------------------------
+4. GETTING RESULTS BACK
+--------------------------------------------------------------------------------
+
+  - run_bench_with_results: writes processed_results.json into the remote
+    repo's results/ directory. To copy that back to your laptop:
+
+    rsync -avz pi@raspberrypi:~/edge-to-core-comparative-analysis/results/ \
+      results/pi5/
+    rsync -avz user@power10-host:~/edge-to-core-comparative-analysis/results/ \
+      results/power10/
+
+  - Full data collection (10 clean runs + 10 SIFI/MTTR runs): SSH into each
+    host and run ./collect_data.sh in the repo root. Then rsync the
+    results/${ARCH}_${TIMESTAMP} folders back to your laptop and aggregate
+    for the plotter.
+
+--------------------------------------------------------------------------------
+5. OPTIONAL: HOST ALIASES VIA fabric.yaml
+--------------------------------------------------------------------------------
+
+In the repo root, create fabric.yaml so you can use short names:
+
+  # fabric.yaml (in repo root)
+  hosts:
+    pi5:
+      host: pi@raspberrypi    # or your Pi's IP
+    power10:
+      host: user@power10-host
+
+Then run:
+
+  fab -f core/fabfile.py -H pi5,power10 run_bench
+
+(Fabric 3 may expect hosts in a different format; check fab --list and the
+ Fabric docs if you use this.)
+
+--------------------------------------------------------------------------------
+
+Summary: Install Fabric on the laptop, put the repo and image on each remote,
+then run "fab -f core/fabfile.py -H <host> run_bench" or run_bench_with_results.
+Use rsync to pull results back for analysis/plotter.py.

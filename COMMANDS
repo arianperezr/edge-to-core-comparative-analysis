@@ -1,0 +1,3 @@
+./collect_data.sh
+
+python analysis/plotter.py -o "results/$(date +%Y%m%d-%H%M%S)"
