@@ -11,3 +11,7 @@ results/raw_logs/
 # OS/IDEs
 .DS_Store
 .vscode/
+# Local command logs
+COMMANDS
+COMMANDS_backup
+*.log
