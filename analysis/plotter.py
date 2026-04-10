@@ -6,6 +6,7 @@ Uses only stdlib + matplotlib (no polars).
 import json
 import os
 import glob
+import csv
 from pathlib import Path
 from collections import defaultdict
 
@@ -302,6 +303,84 @@ def plot_reliability(
         plt.show()
 
 
+def write_summary_tables(
+    datasets: list[tuple[list[dict], list[dict], dict]],
+    mttr_datasets: list[tuple[list[float], dict]],
+    out_dir: str,
+) -> None:
+    """
+    Write report-friendly CSV summary tables for capability, efficiency, and reliability.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+
+    cap_path = os.path.join(out_dir, "summary_capability.csv")
+    with open(cap_path, "w", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["architecture", "threads", "ops_per_sec_mean", "ops_per_sec_std"],
+        )
+        writer.writeheader()
+        for cap_data, _, meta in datasets:
+            arch = _arch_label(meta)
+            for row in cap_data:
+                writer.writerow(
+                    {
+                        "architecture": arch,
+                        "threads": row.get("threads"),
+                        "ops_per_sec_mean": row.get("ops_per_sec_mean"),
+                        "ops_per_sec_std": row.get("ops_per_sec_std"),
+                    }
+                )
+
+    eff_path = os.path.join(out_dir, "summary_efficiency.csv")
+    with open(eff_path, "w", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "architecture",
+                "block_size",
+                "bw_mib_s_mean",
+                "bw_mib_s_std",
+                "p99_lat_us_mean",
+                "p99_lat_us_std",
+            ],
+        )
+        writer.writeheader()
+        for _, eff_data, meta in datasets:
+            arch = _arch_label(meta)
+            for row in eff_data:
+                writer.writerow(
+                    {
+                        "architecture": arch,
+                        "block_size": row.get("block_size"),
+                        "bw_mib_s_mean": row.get("bw_mib_s_mean"),
+                        "bw_mib_s_std": row.get("bw_mib_s_std"),
+                        "p99_lat_us_mean": row.get("p99_lat_us_mean"),
+                        "p99_lat_us_std": row.get("p99_lat_us_std"),
+                    }
+                )
+
+    rel_path = os.path.join(out_dir, "summary_reliability.csv")
+    with open(rel_path, "w", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["architecture", "mttr_samples", "mttr_mean_s", "mttr_std_s"],
+        )
+        writer.writeheader()
+        for mttr_samples, meta in mttr_datasets:
+            if not mttr_samples:
+                continue
+            m, s = _mean_std(mttr_samples)
+            writer.writerow(
+                {
+                    "architecture": _arch_label(meta),
+                    "mttr_samples": len(mttr_samples),
+                    "mttr_mean_s": m,
+                    "mttr_std_s": s,
+                }
+            )
+
+
 def analyze_and_plot(
     paths: list[str] | None = None,
     path: str | None = None,
@@ -368,6 +447,9 @@ def analyze_and_plot(
             rel_datasets,
             out_path=f"{save_basename}_reliability.png" if save_basename else None,
         )
+    if out_dir:
+        write_summary_tables(datasets, mttr_datasets, out_dir)
+        print(f"Summary tables saved under {out_dir}/")
 
     if save_basename and (cap_datasets or eff_datasets):
         print(f"Plots saved under {out_dir}/")

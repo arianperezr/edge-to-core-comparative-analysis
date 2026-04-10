@@ -1,0 +1,47 @@
+{
+    "metadata": {
+        "isa": "ppc64le",
+        "type": "Unknown",
+        "is_enterprise": false
+    },
+    "capability_sweep": [
+        {
+            "threads": 1,
+            "ops_per_sec": 581.13
+        },
+        {
+            "threads": 2,
+            "ops_per_sec": 1166.48
+        },
+        {
+            "threads": 4,
+            "ops_per_sec": 2317.99
+        },
+        {
+            "threads": 8,
+            "ops_per_sec": 4641.6
+        }
+    ],
+    "efficiency_sweep": [
+        {
+            "block_size": "4k",
+            "bw_mib_s": 23.209420204162598,
+            "p99_lat_us": 175.104
+        },
+        {
+            "block_size": "64k",
+            "bw_mib_s": 376.1372718811035,
+            "p99_lat_us": 195.584
+        },
+        {
+            "block_size": "1M",
+            "bw_mib_s": 2988.202359199524,
+            "p99_lat_us": 481.28
+        },
+        {
+            "block_size": "4M",
+            "bw_mib_s": 3865.6268739700317,
+            "p99_lat_us": 1171.456
+        }
+    ]
+}
