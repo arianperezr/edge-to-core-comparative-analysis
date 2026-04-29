@@ -1,13 +1,39 @@
-# Enterprise ISA Resilience: Validating I/O Saturation and Memory Wall Deltas in Power10 vs. Commodity Architectures
+# Enterprise ISA Resilience
 
-This project aims to quantify the "Workload Tipping Points" where commodity x86 and ARM64 architectures succumb to the Memory Wall, compared to the deterministic scaling of IBM Power10.
+This repository contains an automated validation harness that compares edge, commodity, and enterprise architectures across three pillars:
 
-<<<<<<< HEAD
-This framework performs Independent Verification and Validation (IV&V) of the IBM Power10 ecosystem. While commodity architectures (x86/ARM64) prioritize burst performance, this harness identifies the "Workload Tipping Points"—the exact saturation levels where enterprise hardware’s Open Memory Interface (OMI) sustains scaling while commodity buses collapse.
+- Capability: CPU scaling under load (`stress-ng`)
+- Efficiency: I/O behavior across block sizes (`fio`)
+- Reliability: MTTR under Software-Implemented Fault Injection (SIFI)
 
-We are building an automated validation harness to measure I/O saturation and memory bandwidth deltas. A key component of the mission is using Software-Implemented Fault Injection (SIFI) to measure Mean Time to Recovery (MTTR) under systemic stress. We aim to prove that Power10’s Open Memory Interface (OMI) and Matrix Math Accelerator (MMA) provide superior resilience for mission-critical, data-heavy enterprise workloads.
-=======
-I am building an automated validation harness to measure I/O saturation and memory bandwidth deltas. A key component of the mission is using Software-Implemented Fault Injection (SIFI) to measure Mean Time to Recovery (MTTR) under systemic stress. I aim to prove that Power10’s Open Memory Interface (OMI) and Matrix Math Accelerator (MMA) provide superior resilience for mission-critical, data-heavy enterprise workloads.
->>>>>>> 7fb9b51ef84548c2cd79118c39352c79b17aedab
+The current implementation is a validation framework for cross-architecture tipping-point behavior, including virtualized enterprise conditions (Power10 on ppc64le in lab-controlled KVM environments).
 
-Additional information may be found under Documentation -> Project Overview
+The current target lab tiers are:
+
+- Edge: Raspberry Pi 5 (`arm64`)
+- Commodity: consumer laptop (`x86_64`)
+- Enterprise: IBM Power10 (`ppc64le`)
+
+
+## One-Command Run (Recommended)
+
+- `./final_run.sh`
+
+
+## Enterprise Tier Baseline Assumptions
+
+For repeatability of comparative analysis, the enterprise tier documentation assumes:
+
+- Architecture: `ppc64le`
+- Virtualization: KVM para-virtualized guest
+- Threading policy: SMT1 (1 thread per core)
+- Sockets: 8
+- Rationale: SMT1 provides a cleaner per-thread comparison baseline relative to commodity x86 measurements.
+
+## Outputs
+
+- Per-run JSON: `processed_results.json` or `perf_run_*.json`
+- SIFI recovery series: `mttr_data.csv` (scenario-tagged as `scenario,seconds`)
+- Plots: capability, efficiency, reliability PNG files
+- Summary tables: `summary_capability.csv`, `summary_efficiency.csv`, `summary_reliability.csv`
+

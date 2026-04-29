@@ -1,173 +1,145 @@
 ================================================================================
-REPOSITORY FILE GUIDE
+REPOSITORY FILE GUIDE — WHAT EACH FILE DOES
 Edge-to-Core Comparative Analysis
 ================================================================================
 
-This repository is an automated validation framework for comparing enterprise
-(IBM Power10), commodity (x86), and edge (ARM64 / Raspberry Pi 5) architectures.
-It measures "Workload Tipping Points" across three pillars: (1) capability and
-memory-wall scaling, (2) resilience under Software-Implemented Fault Injection
-(SIFI) with Mean Time to Recovery (MTTR), and (3) I/O and efficiency sweeps.
-Results are collected as JSON and CSV for analysis and visualization.
+This repository is a Docker-based validation harness for comparing edge,
+commodity, and enterprise platforms:
+- Edge: Raspberry Pi 5 (arm64)
+- Commodity: x86_64 laptop/workstation
+- Enterprise: IBM Power10 (ppc64le)
 
-Note: The lab container image may be built as either "assurance-harness"
-(used by collect_data.sh, fabfile.py, and the VS Code task) or
-"edge-to-core/lab:latest" (used by docker-compose). Build the image that
-matches the workflow you use.
+It measures three pillars:
+1) Capability (stress-ng CPU sweep)
+2) Efficiency (fio sweep across block sizes and concurrency)
+3) Reliability (SIFI + MTTR)
+
+Enterprise lab baseline assumption for documentation and analysis:
+- ppc64le guest under KVM (para-virtualized), SMT1 (1 thread/core), 8 sockets.
+- SMT1 is used as a per-thread fairness baseline when comparing enterprise to commodity x86 runs.
 
 --------------------------------------------------------------------------------
 ROOT-LEVEL FILES
 --------------------------------------------------------------------------------
 
 README.md
-  What: Project summary and high-level description. Points to Documentation
-        for more detail. Does not contain build or run steps.
-  How:  Plain Markdown; read first for context.
+  What: Project summary and quick-start workflow.
+  How:  Start here for run/collect/plot commands.
 
 docker-compose.yml
-  What: Defines the "lab" service for building and running the harness in a
-        container. Supports multi-arch (linux/amd64, linux/arm64, linux/ppc64le).
-        Mounts ./results to /app/results and sets ENABLE_SIFI=false by default.
-  How:  From repo root: "docker compose build lab" then "docker compose run
-        --rm lab". The build uses testbenches/Dockerfile; the image is tagged
-        edge-to-core/lab:latest.
+  What: Compose service for the lab container.
+  How:  Builds testbenches/Dockerfile, mounts ./results to /app/results, and
+        defaults ENABLE_SIFI=false.
 
 run_lab.sh
-  What: Convenience wrapper to build and run the lab container from the
-        repository root.
-  How:  Changes to repo root, runs "docker compose build lab" and
-        "docker compose run --rm lab". Execute from repo root.
+  What: Convenience wrapper for a single harness run.
+  How:  Executes "docker compose build lab" then "docker compose run --rm lab".
 
 collect_data.sh
-  What: Two-phase automated data collection. Phase 1 runs the harness 10 times
-        in "clean" mode and saves each run's output as perf_run_1.json through
-        perf_run_10.json under results/${ARCH}_${TIMESTAMP}. Phase 2 runs 10
-        SIFI fault-injection runs, measures MTTR using timing and discovery.py
-        health checks, and appends recovery times to mttr_data.csv.
-  How:  Uses the Docker image "assurance-harness" (build with e.g. "docker
-        build -t assurance-harness -f testbenches/Dockerfile ."). Phase 1 runs
-        the container with the results directory mounted and renames
-        processed_results.json to perf_run_$i.json per iteration. Phase 2 sets
-        ENABLE_SIFI=true, detects non-zero exit, then polls "docker run ...
-        python3 /app/core/discovery.py" until success and computes MTTR in
-        seconds, appending to mttr_data.csv.
+  What: Scenario-driven repeated two-phase collection script.
+  How:  Runs one or more scenarios (default: baseline,sustained,io_concurrency).
+        For each scenario:
+        - Phase 1 runs clean iterations and saves perf_run_<scenario>_*.json
+        - Phase 2 runs SIFI iterations and appends scenario-tagged MTTR rows to
+          mttr_data.csv as "<scenario>,<seconds>"
+        Iterations are controlled by ITERATIONS (default 10).
+
+COMMANDS
+  What: Local command log file used by the workspace.
 
 --------------------------------------------------------------------------------
 CORE (Python harness)
 --------------------------------------------------------------------------------
 
 core/main.py
-  What: Entrypoint executed inside the container. Runs Pillar 1 (capability
-        sweep) and Pillar 3 (efficiency sweep), and optionally triggers a SIFI
-        crash. Writes a single processed_results.json to /app/results.
-  How:  Imports discovery.get_arch_details() for metadata. If ENABLE_SIFI is
-        true, sleeps a random 2–5 seconds then exits with code 1. Pillar 1:
-        runs stress-ng --cpu for 1, 2, 4, and 8 threads (5s each), parses
-        bogo ops/s from stderr and stores in capability_sweep. Pillar 3: runs
-        fio with block sizes 4k, 64k, 1M, 4M (write, 128M, 5s), reads
-        /tmp/fio.json for bandwidth and p99 latency and stores in
-        efficiency_sweep. Creates /app/results if needed and writes
-        processed_results.json with metadata, capability_sweep, and
-        efficiency_sweep.
+  What: Main harness entrypoint executed in the container.
+  How:  Discovers architecture metadata, loads benchmark profile from env vars,
+        runs capability + efficiency sweeps, optionally simulates SIFI failure
+        when ENABLE_SIFI=true, then writes /app/results/processed_results.json.
+        Result rows include scenario/concurrency metadata for analysis.
+        Current output schema does not include perf cache counters, thermal
+        sensor series, or direct power/efficiency-per-watt telemetry.
 
 core/discovery.py
-  What: Returns architecture details: ISA name, human-readable type, and
-        is_enterprise flag. Used for result metadata and for recovery health
-        checks during SIFI runs.
-  How:  Uses platform.machine() and optional env MOCK_S390X. Maps x86_64 to
-        Consumer Laptop, aarch64 to Raspberry Pi 5 (arm64), s390x to IBM Z
-        Mainframe; unknown arches get a generic entry. main.py calls it once
-        for metadata; collect_data.sh runs it inside the container to detect
-        when the system is healthy again after a fault.
+  What: Architecture classification helper.
+  How:  Maps x86_64, aarch64, ppc64le, s390x to metadata used in outputs.
 
 core/fabfile.py
-  What: Fabric task to run the benchmark on a remote or local host, with an
-        option to enable SIFI.
-  How:  Defines task run_bench(c, sifi=False). Sets ENABLE_SIFI to "true" or
-        "false" and runs "docker run --rm -e ENABLE_SIFI=... assurance-harness"
-        on the Fabric connection c. Failures are treated as expected when SIFI
-        is enabled; recovery logic can be added where the result is checked.
+  What: Legacy Fabric-based orchestration tasks.
+  How:  Still present, but not part of the primary documented workflow.
 
 --------------------------------------------------------------------------------
 ANALYSIS
 --------------------------------------------------------------------------------
 
 analysis/plotter.py
-  What: Intended to convert result CSVs into "Tipping Point" graphs. Identifies
-        rows where latency exceeds a threshold as tipping points.
-  How:  Uses polars to read a CSV and filters rows with latency > 100 (e.g.
-        milliseconds). Currently prints the filtered rows; does not produce
-        graphs yet. Expects data from the results/ folder.
+  What: Produces comparison plots and summary CSV tables from harness outputs.
+  How:  Reads processed_results.json or perf_run_*.json and mttr_data.csv when
+        available, aggregates by scenario + workload keys, then generates:
+        - plot_capability.png
+        - plot_efficiency.png
+        - plot_reliability.png
+        - summary_capability.csv
+        - summary_efficiency.csv
+        - summary_reliability.csv
+
+analysis/run_plotter.sh
+  What: Venv-safe wrapper for running the plotter.
+  How:  Creates/uses .venv, installs requirements, and invokes plotter.py.
+
+analysis/requirements.txt
+  What: Analysis dependencies (currently matplotlib).
 
 --------------------------------------------------------------------------------
 TESTBENCHES
 --------------------------------------------------------------------------------
 
 testbenches/Dockerfile
-  What: Builds the harness container image. Installs Python, fio, sysbench,
-        and stress-ng on Ubuntu 22.04, and copies the core and testbenches
-        code into /app.
-  How:  Base image ubuntu:22.04; ARG TARGETPLATFORM/TARGETARCH/TARGETOS for
-        multi-arch. Installs python3, python3-pip, fio, sysbench, stress-ng,
-        ca-certificates. WORKDIR /app; COPY ./core and ./testbenches (build
-        context is repo root when using -f testbenches/Dockerfile). CMD runs
-        "python3 /app/core/main.py".
+  What: Multi-architecture lab image definition.
+  How:  Installs Python, stress-ng, fio, and sysbench; runs core/main.py.
 
 testbenches/memory_wall.fio
-  What: Fio configuration for a memory-wall / SIFI-style I/O test: sequential
-        write with libaio and direct I/O.
-  How:  Global settings: ioengine=libaio, direct=1, runtime=10, time_based.
-        Job "sequential-fill": write, 1M block, 128M size, filename /tmp/testfile.
-        main.py does not reference this file; it invokes fio with inline
-        arguments. This file can be used for manual or alternate fio runs.
+  What: Optional fio profile for manual testing.
+  How:  Not currently called by core/main.py directly.
 
 --------------------------------------------------------------------------------
 DOCUMENTATION
 --------------------------------------------------------------------------------
 
 Documentation/Project Overview
-  What: Project overview document: strategy, tri-architecture lab (Edge /
-        Commodity / Enterprise), technical pillars, semester roadmap, and
-        deliverables.
-  How:  Plain text file with no extension; for human reading.
+  What: High-level mission, lab tiers, pillars, and workflow.
 
---------------------------------------------------------------------------------
-CONFIGURATION
---------------------------------------------------------------------------------
+Documentation/Graphs Overview.txt
+  What: How to interpret capability, efficiency, and reliability plots.
 
-.cursorrules
-  What: Project rules for AI and editor: multi-arch Docker (amd64, arm64,
-        ppc64le), use of Fabric for orchestration and Polars for data
-        processing, emphasis on high-resolution MTTR in perf/eBPF scripts,
-        and lab tiers (Edge Pi 5, Commodity x86, Enterprise Power10).
+Documentation/Midterm Project.md
+  What: Course deliverable prompt package for systems-engineering writeups.
 
-.gitignore
-  What: Tells Git to ignore Python bytecode and cache (__pycache__, *.pyc),
-        .venv, result data (results/*.csv, results/*.json, results/raw_logs/),
-        .DS_Store, and .vscode/ so local and generated artifacts are not
-        committed.
+Documentation/Graduate-Lab-Report-Template.md
+  What: Report template for documenting experimental results.
 
-.vscode/tasks.json
-  What: VS Code task "Run Assurance Harness" to build and run the container
-        with one command.
-  How:  Shell task that runs "docker build -t assurance-harness -f
-        testbenches/Dockerfile . && docker run --rm assurance-harness". No
-        volume mount; output stays in the container unless you override the
-        command or add a volume. Default build task.
+Documentation/Verification_Gap_Analysis.md
+  What: Risk-to-mitigation traceability for hypervisor jitter and MTTR clock-skew controls.
 
 --------------------------------------------------------------------------------
 RESULTS
 --------------------------------------------------------------------------------
 
 results/
-  What: Output directory for the harness. Contains processed_results.json
-        from a single run; when using collect_data.sh, also contains
-        perf_run_1.json ... perf_run_10.json and mttr_data.csv under
-        results/${ARCH}_${TIMESTAMP}/.
-  How:  main.py creates /app/results inside the container and writes
-        processed_results.json there. When the host directory ./results is
-        mounted at /app/results (docker-compose or collect_data.sh), files
-        appear on the host. collect_data.sh creates a timestamped subdirectory
-        and renames each run's JSON and appends MTTR values to mttr_data.csv.
+  What: Generated benchmark artifacts.
+  How:  Typical run folder is results/<arch>_<timestamp>/ with
+        perf_run_<scenario>_<n>.json and optional mttr_data.csv. Plotter outputs
+        can also be written under results/ or a custom -o directory.
+
+--------------------------------------------------------------------------------
+NOTES
+--------------------------------------------------------------------------------
+
+- Primary workflow does not require Fabric.
+- Key collection env vars include: SCENARIOS, ITERATIONS, CPU_SWEEP_DURATION_S,
+  CPU_SWEEP_THREADS, FIO_RUNTIME_S, FIO_BLOCK_SIZES, FIO_IODEPTHS, FIO_NUMJOBS,
+  FIO_RW, FIO_SIZE, and ENABLE_SIFI.
+- Two image tags may appear in scripts: edge-to-core/lab:latest (compose) and
+  assurance-harness (collect script). Both come from testbenches/Dockerfile.
 
 ================================================================================

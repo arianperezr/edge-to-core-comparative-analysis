@@ -1,3 +1,4 @@
-./collect_data.sh
-
-python analysis/plotter.py -o "results/$(date +%Y%m%d-%H%M%S)"
+docker build -t assurance-harness -f testbenches/Dockerfile .
+ITERATIONS=1 SCENARIOS=baseline ./collect_data.sh
+ITERATIONS=10 SCENARIOS=baseline,sustained,io_concurrency ./collect_data.sh
+./final_run.sh

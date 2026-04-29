@@ -1,19 +1,54 @@
-Project Overview
+Project Overview — Mission, Scope, and Workflow
 
 What it does
 ------------
-Automated validation framework that finds "Workload Tipping Points": where commodity hardware (x86, ARM64) hits the Memory Wall and enterprise hardware (IBM Power10) keeps scaling. Measures performance deltas and resilience (MTTR under fault injection).
+Automated validation framework for virtualized enterprise ISA resilience. It identifies workload tipping points across architectures: where commodity systems (x86_64, arm64) flatten under stress while enterprise hardware (Power10 / ppc64le) sustains performance under hypervisor constraints. The harness also measures resilience through MTTR during fault-injection runs.
 
-Lab
----
-Same stress tests on three tiers: Edge (Pi 5 / ARM64), Commodity (x86 laptop), Enterprise (Power10 / ppc64le).
+Lab tiers
+---------
+Same test logic runs across:
+- Edge: Raspberry Pi 5 (arm64)
+- Commodity: Consumer laptop (x86_64)
+- Enterprise: IBM Power10 (ppc64le)
 
-Pillars
--------
-1. Capability — CPU/memory throughput scaling (stress-ng, thread sweeps).
-2. Resilience — SIFI fault injection; measure Mean Time to Recovery (MTTR).
-3. Efficiency — I/O saturation and memory-wall behavior (fio, block-size sweeps).
+Enterprise test environment baseline
+------------------------------------
+- Architecture: ppc64le
+- Virtualization: KVM (para-virtualized guest)
+- Threading policy: SMT1 (1 thread per core)
+- Sockets: 8
+- Technical assumption: SMT1 is used to establish a fair per-thread comparison baseline against commodity x86 systems.
 
-Deliverables
-------------
-Validation harness (Python + Docker), tipping-point visualizations, resilience comparison (e.g. Power10 vs x86 recovery times), and an assurance methodology write-up.
+Measurement pillars
+-------------------
+1. Capability: CPU scaling sweep via `stress-ng` (threads 1, 2, 4, 8).
+2. Efficiency: I/O sweep via `fio` (block sizes 4k, 64k, 1M, 4M).
+3. Reliability: SIFI runs with MTTR collection (`ENABLE_SIFI=true`).
+
+Scenario profiles
+-----------------
+The collector now runs scenario-based profiles to surface both burst and sustained behavior:
+- baseline: short-run reference profile (legacy behavior).
+- sustained: longer runtime profile for thermal/scheduling and steadier throughput.
+- io_concurrency: queue-depth and job-count sweep to identify I/O saturation knees.
+
+Current telemetry scope
+-----------------------
+Implemented telemetry in the current repository is intentionally focused on:
+- Capability: stress-ng bogo ops/s across thread counts.
+- Efficiency: fio bandwidth (MiB/s) and p99 latency (us) across block sizes and concurrency settings.
+- Reliability: MTTR from SIFI fault-injection runs.
+
+Additional signals such as cache-miss counters, thermal sensor traces, and direct power telemetry are not yet part of the default harness output contract.
+
+Current workflow
+----------------
+1. Run one pass quickly with `./run_lab.sh`.
+2. Run repeated collection with `./collect_data.sh` (clean + SIFI phases).
+3. Generate plots and summary tables with `./analysis/run_plotter.sh`.
+
+Primary outputs
+---------------
+- `results/<arch>_<timestamp>/perf_run_*.json`
+- `results/<arch>_<timestamp>/mttr_data.csv`
+- plot images and summary CSVs from `analysis/plotter.py`
