@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 .venv/
+.venv_ai_validation/
+.python_user_base/
 
 # Data and Logs (Do not push large datasets)
 results/*.csv
