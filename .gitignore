@@ -5,10 +5,8 @@ __pycache__/
 .venv_ai_validation/
 .python_user_base/
 
-# Data and Logs (Do not push large datasets)
-results/*.csv
-results/*.json
-results/raw_logs/
+# Data and Logs (Do not push benchmark outputs)
+results/
 
 # OS/IDEs
 .DS_Store

@@ -1,0 +1,9 @@
+architecture,scenario,duration_s,threads,ops_per_sec_mean,ops_per_sec_std
+Consumer Laptop,baseline,5,1,779.41,0.0
+Consumer Laptop,baseline,5,2,1477.43,0.0
+Consumer Laptop,baseline,5,4,2833.82,0.0
+Consumer Laptop,baseline,5,8,6681.42,0.0
+Consumer Laptop,baseline,5,1,1715.8652,233.52844860527512
+Consumer Laptop,baseline,5,2,3356.3485,485.2117747643634
+Consumer Laptop,baseline,5,4,6460.166133333333,952.2240405965476
+Consumer Laptop,baseline,5,8,11050.953233333334,1589.6325068419349

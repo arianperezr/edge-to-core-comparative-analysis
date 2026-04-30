@@ -8,8 +8,6 @@ import time
 from pathlib import Path
 
 import numpy as np
-from sklearn.datasets import make_classification
-from sklearn.ensemble import RandomForestClassifier
 
 
 def _read_float_env(name: str, default: float) -> float:
@@ -23,15 +21,36 @@ def _read_float_env(name: str, default: float) -> float:
         return default
 
 
-def _run_inference_loop(model: RandomForestClassifier, samples: np.ndarray, iterations: int) -> list[float]:
+def _dense_forward(batch: np.ndarray, w1: np.ndarray, b1: np.ndarray, w2: np.ndarray, b2: np.ndarray) -> np.ndarray:
+    x = batch @ w1 + b1
+    np.maximum(x, 0, out=x)  # ReLU
+    return x @ w2 + b2
+
+
+def _run_inference_loop(
+    samples: np.ndarray,
+    w1: np.ndarray,
+    b1: np.ndarray,
+    w2: np.ndarray,
+    b2: np.ndarray,
+    iterations: int,
+    batch_size: int,
+) -> list[float]:
     latencies_ms: list[float] = []
     sample_count = samples.shape[0]
     for i in range(iterations):
-        sample = samples[i % sample_count].reshape(1, -1)
+        start_idx = (i * batch_size) % sample_count
+        end_idx = start_idx + batch_size
+        if end_idx <= sample_count:
+            batch = samples[start_idx:end_idx]
+        else:
+            overflow = end_idx - sample_count
+            batch = np.vstack((samples[start_idx:], samples[:overflow]))
         start = time.perf_counter()
-        model.predict(sample)
+        _dense_forward(batch, w1, b1, w2, b2)
         end = time.perf_counter()
-        latencies_ms.append((end - start) * 1000.0)
+        # Normalize to per-sample latency for fair cross-batch comparison.
+        latencies_ms.append((end - start) * 1000.0 / batch_size)
     return latencies_ms
 
 
@@ -109,27 +128,26 @@ def _metrics(latencies_ms: list[float]) -> dict[str, float]:
 
 def run_ai_validation() -> None:
     iterations = int(os.getenv("AI_INFER_ITERATIONS", "1000"))
+    batch_size = int(os.getenv("AI_BATCH_SIZE", "64"))
+    input_dim = int(os.getenv("AI_INPUT_DIM", "1024"))
+    hidden_dim = int(os.getenv("AI_HIDDEN_DIM", "2048"))
+    output_dim = int(os.getenv("AI_OUTPUT_DIM", "512"))
+    sample_count = int(os.getenv("AI_SAMPLE_COUNT", "4096"))
     results_csv = Path(os.getenv("AI_RESULTS_CSV", "results/ai_resilience_final.csv"))
 
-    x, y = make_classification(
-        n_samples=4000,
-        n_features=24,
-        n_informative=16,
-        n_redundant=4,
-        n_classes=2,
-        random_state=42,
-    )
+    rng = np.random.default_rng(42)
+    infer_samples = rng.standard_normal((sample_count, input_dim), dtype=np.float32)
+    w1 = rng.standard_normal((input_dim, hidden_dim), dtype=np.float32) * np.float32(0.02)
+    b1 = rng.standard_normal((hidden_dim,), dtype=np.float32) * np.float32(0.02)
+    w2 = rng.standard_normal((hidden_dim, output_dim), dtype=np.float32) * np.float32(0.02)
+    b2 = rng.standard_normal((output_dim,), dtype=np.float32) * np.float32(0.02)
 
-    model = RandomForestClassifier(n_estimators=40, random_state=42)
-    model.fit(x[:3000], y[:3000])
-    infer_samples = x[3000:]
-
-    idle_latencies = _run_inference_loop(model, infer_samples, iterations)
+    idle_latencies = _run_inference_loop(infer_samples, w1, b1, w2, b2, iterations, batch_size)
     idle_stats = _metrics(idle_latencies)
 
     stress_proc = _start_io_stressor()
     try:
-        stressed_latencies = _run_inference_loop(model, infer_samples, iterations)
+        stressed_latencies = _run_inference_loop(infer_samples, w1, b1, w2, b2, iterations, batch_size)
     finally:
         _stop_stressor(stress_proc)
     stressed_stats = _metrics(stressed_latencies)
@@ -151,6 +169,7 @@ def run_ai_validation() -> None:
                 "p99_Latency",
                 "Jitter_Delta",
                 "Efficiency_Loss_Pct",
+                "Workload",
             ],
         )
         if not file_exists:
@@ -164,6 +183,7 @@ def run_ai_validation() -> None:
                 "p99_Latency": f"{idle_stats['p99_ms']:.6f}",
                 "Jitter_Delta": "0.000000",
                 "Efficiency_Loss_Pct": "0.000000",
+                "Workload": "dense_mlp",
             }
         )
         writer.writerow(
@@ -174,11 +194,13 @@ def run_ai_validation() -> None:
                 "p99_Latency": f"{stressed_stats['p99_ms']:.6f}",
                 "Jitter_Delta": f"{jitter_delta_ms:.6f}",
                 "Efficiency_Loss_Pct": f"{efficiency_loss_pct:.6f}",
+                "Workload": "dense_mlp",
             }
         )
 
     print("AI inference validation complete.")
     print(f"Architecture: {platform.machine()}")
+    print(f"Workload: dense_mlp (batch_size={batch_size}, dims={input_dim}->{hidden_dim}->{output_dim})")
     print(f"Idle avg/p99 latency (ms): {idle_stats['avg_ms']:.6f}/{idle_stats['p99_ms']:.6f}")
     print(
         "Stressed avg/p99 latency (ms): "

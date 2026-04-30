@@ -1,0 +1,9 @@
+architecture,scenario,block_size,iodepth,numjobs,rw_pattern,runtime_s,bw_mib_s_mean,bw_mib_s_std,p99_lat_us_mean,p99_lat_us_std
+Consumer Laptop,baseline,1M,1,1,write,5,1240.3519287109375,0.0,1417.216,0.0
+Consumer Laptop,baseline,4M,1,1,write,5,1863.6272745132446,0.0,6586.368,0.0
+Consumer Laptop,baseline,4k,1,1,write,5,10.038617134094238,0.0,651.264,0.0
+Consumer Laptop,baseline,64k,1,1,write,5,150.60737800598145,0.0,888.832,0.0
+Consumer Laptop,baseline,1M,1,1,write,5,1865.9626428922018,282.4283942517044,1643.80672,3196.93342808021
+Consumer Laptop,baseline,4M,1,1,write,5,2533.280891491572,419.82462700389885,6808.971946666667,6681.284181889201
+Consumer Laptop,baseline,4k,1,1,write,5,22.53233867963155,2.4689648429229307,295.43424,63.94935449711534
+Consumer Laptop,baseline,64k,1,1,write,5,313.477551240921,67.517981030905,1417.7143466666666,3435.880933242325

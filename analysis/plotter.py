@@ -397,6 +397,116 @@ def load_mttr_csv(dir_path: str) -> list[float]:
     return values
 
 
+def load_ai_csv(path: str) -> list[dict]:
+    """Load AI resilience rows from ai_resilience_final.csv."""
+    p = Path(path)
+    if p.is_dir():
+        p = p / "ai_resilience_final.csv"
+    if not p.exists():
+        return []
+    rows: list[dict] = []
+    try:
+        with open(p, "r", newline="") as f:
+            reader = csv.DictReader(f)
+            for r in reader:
+                arch = (r.get("Architecture") or "").strip()
+                test_type = (r.get("Test_Type") or "").strip()
+                if not arch or test_type not in {"Idle", "Stressed"}:
+                    continue
+                try:
+                    rows.append(
+                        {
+                            "architecture": arch,
+                            "workload": (r.get("Workload") or "unknown").strip() or "unknown",
+                            "test_type": test_type,
+                            "avg_latency_ms": float(r.get("Average_Latency", "0") or 0),
+                            "p99_latency_ms": float(r.get("p99_Latency", "0") or 0),
+                            "jitter_delta_ms": float(r.get("Jitter_Delta", "0") or 0),
+                            "efficiency_loss_pct": float(r.get("Efficiency_Loss_Pct", "0") or 0),
+                        }
+                    )
+                except ValueError:
+                    continue
+    except OSError:
+        return []
+    return rows
+
+
+def ai_latest_per_arch(ai_rows: list[dict]) -> list[dict]:
+    """Keep latest Idle/Stressed pair per architecture/workload."""
+    by_arch: dict[tuple[str, str], dict[str, dict]] = defaultdict(dict)
+    for row in ai_rows:
+        key = (row["architecture"], row.get("workload", "unknown"))
+        by_arch[key][row["test_type"]] = row
+
+    summary = []
+    for (arch, workload), pair in sorted(by_arch.items()):
+        idle = pair.get("Idle")
+        stressed = pair.get("Stressed")
+        if not idle or not stressed:
+            continue
+        summary.append(
+            {
+                "architecture": arch,
+                "workload": workload,
+                "idle_avg_ms": idle["avg_latency_ms"],
+                "stressed_avg_ms": stressed["avg_latency_ms"],
+                "idle_p99_ms": idle["p99_latency_ms"],
+                "stressed_p99_ms": stressed["p99_latency_ms"],
+                "jitter_delta_ms": stressed["jitter_delta_ms"],
+                "efficiency_loss_pct": stressed["efficiency_loss_pct"],
+            }
+        )
+    return summary
+
+
+def plot_ai_resilience(ai_summary: list[dict], out_path: str | None = None) -> None:
+    """Plot AI resilience metrics by architecture."""
+    if not ai_summary:
+        return
+    archs = [f"{r['architecture']} ({r.get('workload', 'unknown')})" for r in ai_summary]
+    x = list(range(len(archs)))
+    width = 0.35
+
+    fig, (ax_avg, ax_p99, ax_eff) = plt.subplots(3, 1, sharex=True, figsize=(max(7, len(archs) * 2.0), 10))
+
+    idle_avg = [r["idle_avg_ms"] for r in ai_summary]
+    stressed_avg = [r["stressed_avg_ms"] for r in ai_summary]
+    ax_avg.bar([i - width / 2 for i in x], idle_avg, width=width, label="Idle")
+    ax_avg.bar([i + width / 2 for i in x], stressed_avg, width=width, label="Stressed")
+    ax_avg.set_ylabel("Avg latency (ms)")
+    ax_avg.set_title("AI resilience — Average latency by architecture/workload")
+    ax_avg.legend()
+    ax_avg.grid(True, axis="y", alpha=0.3)
+
+    idle_p99 = [r["idle_p99_ms"] for r in ai_summary]
+    stressed_p99 = [r["stressed_p99_ms"] for r in ai_summary]
+    ax_p99.bar([i - width / 2 for i in x], idle_p99, width=width, label="Idle")
+    ax_p99.bar([i + width / 2 for i in x], stressed_p99, width=width, label="Stressed")
+    ax_p99.set_ylabel("p99 latency (ms)")
+    ax_p99.set_title("AI resilience — p99 latency by architecture/workload")
+    ax_p99.legend()
+    ax_p99.grid(True, axis="y", alpha=0.3)
+
+    eff = [r["efficiency_loss_pct"] for r in ai_summary]
+    bars = ax_eff.bar(x, eff, width=0.6)
+    ax_eff.set_ylabel("Efficiency loss (%)")
+    ax_eff.set_title("AI resilience — Efficiency loss under stress by architecture/workload")
+    ax_eff.grid(True, axis="y", alpha=0.3)
+    for i, b in enumerate(bars):
+        ax_eff.annotate(f"{eff[i]:.1f}%", (b.get_x() + b.get_width() / 2, eff[i]), textcoords="offset points", xytext=(0, 4), ha="center", fontsize=8)
+
+    ax_eff.set_xticks(x)
+    ax_eff.set_xticklabels(archs, rotation=15, ha="right")
+
+    fig.tight_layout()
+    if out_path:
+        fig.savefig(out_path, dpi=150)
+        plt.close(fig)
+    else:
+        plt.show()
+
+
 def plot_reliability(
     datasets: list[tuple[list[float], dict]],
     out_path: str | None = None,
@@ -550,6 +660,29 @@ def write_summary_tables(
             )
 
 
+def write_ai_summary_table(ai_summary: list[dict], out_dir: str) -> None:
+    if not ai_summary:
+        return
+    ai_path = os.path.join(out_dir, "summary_ai.csv")
+    with open(ai_path, "w", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "architecture",
+                "workload",
+                "idle_avg_ms",
+                "stressed_avg_ms",
+                "idle_p99_ms",
+                "stressed_p99_ms",
+                "jitter_delta_ms",
+                "efficiency_loss_pct",
+            ],
+        )
+        writer.writeheader()
+        for row in ai_summary:
+            writer.writerow(row)
+
+
 def analyze_and_plot(
     paths: list[str] | None = None,
     path: str | None = None,
@@ -570,27 +703,34 @@ def analyze_and_plot(
             paths = resolved
     datasets = []  # (cap_data, eff_data, meta)
     mttr_datasets = []  # (mttr_samples, meta)
+    ai_rows_all = []
     for p in paths:
         json_paths = find_result_jsons(p)
-        if not json_paths:
-            print(f"No result JSONs at {p}, skipping.")
-            continue
-        data = [load_result_json(f) for f in json_paths]
-        cap_data, eff_data, meta = results_to_tables(data)
-        label = _arch_label(meta)
-        print(f"Loaded {len(json_paths)} run(s) for {label} from {p}")
-        tipping = tipping_points(eff_data, latency_threshold_us=100_000)
-        if tipping:
-            print(f"  Tipping points (p99 > 100 ms): {[r['block_size'] for r in tipping]}")
-        datasets.append((cap_data, eff_data, meta))
-        mttr = load_mttr_csv(p)
-        if mttr:
-            m, s = _mean_std(mttr)
-            print(f"  SIFI MTTR samples: n={len(mttr)}, mean={m:.3f}s, std={s:.3f}s")
-            mttr_datasets.append((mttr, meta))
+        if json_paths:
+            data = [load_result_json(f) for f in json_paths]
+            cap_data, eff_data, meta = results_to_tables(data)
+            label = _arch_label(meta)
+            print(f"Loaded {len(json_paths)} run(s) for {label} from {p}")
+            tipping = tipping_points(eff_data, latency_threshold_us=100_000)
+            if tipping:
+                print(f"  Tipping points (p99 > 100 ms): {[r['block_size'] for r in tipping]}")
+            datasets.append((cap_data, eff_data, meta))
+            mttr = load_mttr_csv(p)
+            if mttr:
+                m, s = _mean_std(mttr)
+                print(f"  SIFI MTTR samples: n={len(mttr)}, mean={m:.3f}s, std={s:.3f}s")
+                mttr_datasets.append((mttr, meta))
+        else:
+            print(f"No result JSONs at {p}, skipping JSON plots for this path.")
 
-    if not datasets:
-        print("No result JSONs found. Expect processed_results.json or perf_run_*.json")
+        ai_rows = load_ai_csv(p)
+        if ai_rows:
+            ai_rows_all.extend(ai_rows)
+
+    ai_summary = ai_latest_per_arch(ai_rows_all)
+
+    if not datasets and not ai_summary:
+        print("No result JSONs or AI CSV found. Expect perf_run_*.json and/or ai_resilience_final.csv")
         return
 
     save_basename = None
@@ -601,6 +741,11 @@ def analyze_and_plot(
     cap_datasets = [(c, m) for c, e, m in datasets if c]
     eff_datasets = [(e, m) for c, e, m in datasets if e]
     rel_datasets = [(mttr, m) for mttr, m in mttr_datasets if mttr]
+    if ai_summary:
+        plot_ai_resilience(
+            ai_summary,
+            out_path=f"{save_basename}_ai_resilience.png" if save_basename else None,
+        )
     if cap_datasets:
         plot_capability(
             cap_datasets,
@@ -617,7 +762,9 @@ def analyze_and_plot(
             out_path=f"{save_basename}_reliability.png" if save_basename else None,
         )
     if out_dir:
-        write_summary_tables(datasets, mttr_datasets, out_dir)
+        if datasets:
+            write_summary_tables(datasets, mttr_datasets, out_dir)
+        write_ai_summary_table(ai_summary, out_dir)
         print(f"Summary tables saved under {out_dir}/")
 
     if save_basename and (cap_datasets or eff_datasets):

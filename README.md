@@ -49,6 +49,7 @@ Use these commands on a new machine before the first benchmark run.
 - `ITERATIONS=10 SCENARIOS=baseline,sustained,io_concurrency ./collect_data.sh`
 - or simply `./final_run.sh` (includes smoke + full collection, and AI validation by default)
 - AI-only rerun for missing data: `./run_ai_validation.sh`
+- AI workload tuning (matrix-heavy dense MLP): `AI_BATCH_SIZE=64 AI_INFER_ITERATIONS=1000 ./run_ai_validation.sh`
 
 6) Optional: install plotting dependencies:
 
@@ -73,7 +74,7 @@ For repeatability of comparative analysis, the enterprise tier documentation ass
 - Per-run JSON: `processed_results.json` or `perf_run_*.json`
 - SIFI recovery series: `mttr_data.csv` (scenario-tagged as `scenario,seconds`)
 - AI resilience CSV: `results/ai_resilience_final.csv` with
-  `Architecture,Test_Type,Average_Latency,p99_Latency,Jitter_Delta,Efficiency_Loss_Pct`
+  `Architecture,Test_Type,Average_Latency,p99_Latency,Jitter_Delta,Efficiency_Loss_Pct,Workload`
 - Plots: capability, efficiency, reliability PNG files
 - Summary tables: `summary_capability.csv`, `summary_efficiency.csv`, `summary_reliability.csv`
 
