@@ -3,6 +3,7 @@ import csv
 import os
 import platform
 import shutil
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -54,11 +55,25 @@ def _start_io_stressor() -> subprocess.Popen | None:
             "--time_based",
             "--group_reporting=1",
         ]
-        return subprocess.Popen(stress_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(
+            stress_cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        print(f"Started I/O stressor (fio), pid={proc.pid}")
+        return proc
 
     if shutil.which("stress-ng"):
         stress_cmd = ["stress-ng", "--hdd", "2", "--hdd-bytes", "512M", "--timeout", "180s"]
-        return subprocess.Popen(stress_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(
+            stress_cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        print(f"Started I/O stressor (stress-ng), pid={proc.pid}")
+        return proc
 
     raise RuntimeError("Neither fio nor stress-ng is available for stressed AI inference phase.")
 
@@ -66,13 +81,90 @@ def _start_io_stressor() -> subprocess.Popen | None:
 def _stop_stressor(proc: subprocess.Popen | None) -> None:
     if proc is None:
         return
-    if proc.poll() is None:
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
+    if proc.poll() is not None:
+        print(f"Stressor already exited with return code {proc.returncode}, pid={proc.pid}")
+        return
+
+    raw_timeout = os.getenv("STRESSOR_STOP_TIMEOUT", "20")
+    try:
+        stop_timeout_s = float(raw_timeout)
+    except ValueError:
+        print(
+            f"Warning: invalid STRESSOR_STOP_TIMEOUT={raw_timeout!r}; "
+            "falling back to 20.0s"
+        )
+        stop_timeout_s = 20.0
+    if stop_timeout_s < 0:
+        print(
+            f"Warning: negative STRESSOR_STOP_TIMEOUT={stop_timeout_s}; "
+            "using minimum timeout 0.1s"
+        )
+        stop_timeout_s = 0.1
+    elif stop_timeout_s == 0:
+        print("Warning: STRESSOR_STOP_TIMEOUT=0; using minimum timeout 0.1s")
+        stop_timeout_s = 0.1
+    phase_start = time.perf_counter()
+    used_process_group = False
+
+    try:
+        pgid = os.getpgid(proc.pid)
+        os.killpg(pgid, signal.SIGTERM)
+        used_process_group = True
+        print(f"Stopping stressor pid={proc.pid} via process group SIGTERM (pgid={pgid})")
+    except ProcessLookupError:
+        # Process may have exited between getpgid()/killpg() and signal delivery.
+        print(f"Stressor process group already gone for pid={proc.pid}; assuming exit race during SIGTERM")
+        return
+    except PermissionError as exc:
+        # Permission issues can happen in constrained runtimes; fallback to process signal path.
+        if proc.poll() is None:
+            print(
+                f"Warning: process group SIGTERM denied ({exc}); "
+                f"falling back to process SIGTERM for pid={proc.pid}"
+            )
+            proc.terminate()
+        else:
+            print(f"Stressor exited before fallback terminate, pid={proc.pid}, rc={proc.returncode}")
+            return
+
+    try:
+        proc.wait(timeout=stop_timeout_s)
+        elapsed = time.perf_counter() - phase_start
+        print(f"Stressor exited gracefully in {elapsed:.2f}s, pid={proc.pid}, rc={proc.returncode}")
+        return
+    except subprocess.TimeoutExpired:
+        elapsed = time.perf_counter() - phase_start
+        print(
+            "Warning: stressor did not stop after "
+            f"{elapsed:.2f}s (timeout={stop_timeout_s:.1f}s), escalating to force kill; pid={proc.pid}"
+        )
+
+    elapsed_before_kill = time.perf_counter() - phase_start
+    remaining_timeout_s = max(0.1, stop_timeout_s - elapsed_before_kill)
+    kill_start = time.perf_counter()
+    try:
+        if used_process_group:
+            pgid = os.getpgid(proc.pid)
+            os.killpg(pgid, signal.SIGKILL)
+            print(f"Escalation used: process group SIGKILL for pid={proc.pid} (pgid={pgid})")
+        else:
             proc.kill()
-            proc.wait(timeout=5)
+            print(f"Escalation used: process SIGKILL for pid={proc.pid}")
+    except ProcessLookupError:
+        print(f"Stressor already exited before force-kill, pid={proc.pid}")
+        return
+
+    try:
+        proc.wait(timeout=remaining_timeout_s)
+        elapsed = time.perf_counter() - kill_start
+        print(f"Stressor force-killed and reaped in {elapsed:.2f}s, pid={proc.pid}, rc={proc.returncode}")
+    except subprocess.TimeoutExpired:
+        elapsed = time.perf_counter() - kill_start
+        print(
+            "Warning: stressor could not be reaped after SIGKILL "
+            f"within {elapsed:.2f}s (remaining budget={remaining_timeout_s:.2f}s), "
+            f"pid={proc.pid}. Continuing (best effort cleanup)."
+        )
 
 
 def _metrics(latencies_ms: list[float]) -> dict[str, float]:
@@ -107,7 +199,10 @@ def run_ai_validation() -> None:
     try:
         stressed_latencies = _run_inference_loop(model, infer_samples, iterations)
     finally:
-        _stop_stressor(stress_proc)
+        try:
+            _stop_stressor(stress_proc)
+        except Exception as exc:
+            print(f"Warning: stressor cleanup failed but validation will continue: {exc}")
     stressed_stats = _metrics(stressed_latencies)
 
     idle_avg = idle_stats["avg_ms"]
