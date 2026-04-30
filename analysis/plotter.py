@@ -7,11 +7,23 @@ import json
 import os
 import glob
 import csv
+import math
 from pathlib import Path
 from collections import defaultdict
 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 
+plt.style.use("seaborn-v0_8-whitegrid")
+plt.rcParams.update(
+    {
+        "figure.dpi": 120,
+        "savefig.dpi": 160,
+        "axes.titlesize": 14,
+        "axes.labelsize": 12,
+        "legend.fontsize": 10,
+    }
+)
 
 def _safe_pct_delta(value: float, ref: float) -> float | None:
     if ref == 0:
@@ -23,6 +35,87 @@ def _safe_pct_improvement_lower_is_better(value: float, ref: float) -> float | N
     if ref == 0:
         return None
     return ((ref - value) / ref) * 100.0
+
+
+def _safe_ratio(value: float, ref: float) -> float | None:
+    if ref == 0:
+        return None
+    return value / ref
+
+
+def _median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    vals = sorted(values)
+    n = len(vals)
+    mid = n // 2
+    if n % 2 == 1:
+        return vals[mid]
+    return (vals[mid - 1] + vals[mid]) / 2.0
+
+
+def _ai_arch_display(arch: str) -> str:
+    arch_key = (arch or "").strip().lower()
+    labels = {
+        "aarch64": "Raspberry Pi 5 (aarch64)",
+        "arm64": "Raspberry Pi 5 (arm64)",
+        "raspberry pi 5": "Raspberry Pi 5 (aarch64)",
+        "x86_64": "Consumer Laptop (x86_64)",
+        "amd64": "Consumer Laptop (amd64)",
+        "consumer laptop": "Consumer Laptop (x86_64)",
+        "ppc64le": "IBM Power 10 (ppc64le)",
+        "powerpc64le": "IBM Power 10 (powerpc64le)",
+        "ibm power10": "IBM Power 10 (ppc64le)",
+        "ibm power 10": "IBM Power 10 (ppc64le)",
+    }
+    return labels.get(arch_key, arch)
+
+
+def _ms_tick_formatter(value: float, _pos: float) -> str:
+    if value >= 1.0:
+        return f"{value:.2f}"
+    return f"{value:.3f}"
+
+
+def _arch_sort_key(label: str) -> int:
+    l = (label or "").lower()
+    if "power" in l:
+        return 0
+    if "laptop" in l:
+        return 1
+    if "raspberry" in l or "pi" in l:
+        return 2
+    return 99
+
+
+def _arch_color(label: str) -> str:
+    l = (label or "").lower()
+    if "power" in l:
+        return "#4C78A8"
+    if "laptop" in l:
+        return "#F58518"
+    if "raspberry" in l or "pi" in l:
+        return "#54A24B"
+    return "#9C755F"
+
+
+def _block_size_sort_key(bs: str) -> tuple[int, int]:
+    s = (bs or "").strip().lower()
+    if not s:
+        return (0, 0)
+    unit = s[-1]
+    num_str = s[:-1]
+    try:
+        n = int(num_str)
+    except ValueError:
+        return (0, 0)
+    if unit == "k":
+        return (n, 0)
+    if unit == "m":
+        return (n * 1024, 0)
+    if unit == "g":
+        return (n * 1024 * 1024, 0)
+    return (0, 0)
 
 
 def load_result_json(path: str) -> dict:
@@ -153,11 +246,23 @@ def _arch_label(metadata: dict) -> str:
     return metadata.get("isa") or "Unknown"
 
 
-def _reference_dataset_index_from_meta(meta_list: list[dict]) -> int:
+def _reference_dataset_index_from_meta(meta_list: list[dict], preferred: str | None = None) -> int:
     """
     Prefer commodity/laptop reference so percentage labels highlight enterprise uplift.
     Fallback: first dataset.
     """
+    if preferred:
+        preferred_key = preferred.strip().lower()
+        for idx, meta in enumerate(meta_list):
+            label = _arch_label(meta).lower()
+            isa = str(meta.get("isa", "")).lower()
+            if preferred_key in label or preferred_key == isa:
+                return idx
+            if preferred_key in {"ibm power", "power10", "ppc64le"} and (
+                "power" in label or isa in {"ppc64le", "powerpc64le"}
+            ):
+                return idx
+
     for idx, meta in enumerate(meta_list):
         label = _arch_label(meta).lower()
         isa = str(meta.get("isa", "")).lower()
@@ -170,10 +275,19 @@ def plot_capability(
     datasets: list[tuple[list[dict], dict]],
     out_path: str | None = None,
 ) -> None:
-    """Plot capability sweep with percentage gain labels vs reference."""
+    """Plot capability sweep (baseline-only) with percentage gain labels vs reference."""
     if not datasets:
         return
-    fig, ax = plt.subplots()
+    # Cross-architecture chart should compare a single scenario fairly.
+    baseline_only: list[tuple[list[dict], dict]] = []
+    for cap_data, meta in datasets:
+        rows = [r for r in cap_data if r.get("scenario", "baseline") == "baseline"]
+        if rows:
+            baseline_only.append((rows, meta))
+    if baseline_only:
+        datasets = baseline_only
+
+    fig, ax = plt.subplots(figsize=(9, 5))
     ref_idx = _reference_dataset_index_from_meta([meta for _, meta in datasets])
     ref_label = _arch_label(datasets[ref_idx][1])
     ref_values: dict[tuple[str, int], float] = {}
@@ -193,6 +307,18 @@ def plot_capability(
             x = [r["threads"] for r in rows]
             y = [r["ops_per_sec_mean"] for r in rows]
             ax.plot(x, y, marker="o", label=label)
+
+            # Annotate Consumer Laptop absolute bogo ops/s values for easier reading.
+            if _arch_label(meta) == "Consumer Laptop":
+                for r in rows:
+                    ax.annotate(
+                        f"{r['ops_per_sec_mean']:.0f}",
+                        (r["threads"], r["ops_per_sec_mean"]),
+                        textcoords="offset points",
+                        xytext=(0, 10),
+                        ha="center",
+                        fontsize=8,
+                    )
 
             is_reference_arch = _arch_label(meta) == ref_label
             if is_reference_arch:
@@ -217,7 +343,7 @@ def plot_capability(
     ax.set_xlabel("Threads")
     ax.set_ylabel("Bogo ops/s")
     ax.set_title(f"Capability sweep (stress-ng CPU) — % vs {ref_label}")
-    ax.legend()
+    ax.legend(loc="best", frameon=True)
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     if out_path:
@@ -231,7 +357,7 @@ def plot_efficiency(
     datasets: list[tuple[list[dict], dict]],
     out_path: str | None = None,
 ) -> None:
-    """Plot efficiency sweep with percentage deltas vs reference."""
+    """Plot efficiency sweep with absolute and tipping-point views."""
     if not datasets:
         return
     # Keep this plot focused on the baseline/default fio shape for readability.
@@ -247,7 +373,7 @@ def plot_efficiency(
     if not filtered:
         filtered = datasets
 
-    # Union of block sizes across all archs (preserve order: first arch's order, then any extra)
+    # Union of block sizes across all archs, sorted numerically (e.g., 4k, 64k, 1M, 4M).
     all_bs = []
     seen_bs = set()
     for eff_data, _ in filtered:
@@ -258,6 +384,7 @@ def plot_efficiency(
                 all_bs.append(bs)
     if not all_bs:
         return
+    all_bs = sorted(all_bs, key=_block_size_sort_key)
 
     n_bs = len(all_bs)
     n_arch = len(filtered)
@@ -265,8 +392,8 @@ def plot_efficiency(
     # Offsets so bars are centered per block_size group
     offsets = [(i - (n_arch - 1) / 2) * bar_width for i in range(n_arch)]
 
-    fig, (ax_bw, ax_lat) = plt.subplots(2, 1, sharex=True, figsize=(max(6, n_bs * 1.5), 7))
-    ref_idx = _reference_dataset_index_from_meta([meta for _, meta in filtered])
+    fig, (ax_bw, ax_lat, ax_tip) = plt.subplots(3, 1, figsize=(max(8, n_bs * 1.8), 11))
+    ref_idx = _reference_dataset_index_from_meta([meta for _, meta in filtered], preferred="ppc64le")
     ref_label = _arch_label(filtered[ref_idx][1])
     ref_by_bs = {}
     if filtered and filtered[ref_idx][0]:
@@ -281,9 +408,7 @@ def plot_efficiency(
         label = _arch_label(meta)
         by_bs = by_block_size(eff_data)
         y_bw = [by_bs.get(bs, {}).get("bw_mib_s_mean", 0) for bs in all_bs]
-        err_bw = [by_bs.get(bs, {}).get("bw_mib_s_std", 0) for bs in all_bs]
         y_lat = [by_bs.get(bs, {}).get("p99_lat_us_mean", 0) for bs in all_bs]
-        err_lat = [by_bs.get(bs, {}).get("p99_lat_us_std", 0) for bs in all_bs]
         x = [i + offsets[idx] for i in range(n_bs)]
         bars_bw = ax_bw.bar(x, y_bw, width=bar_width * 0.9, label=label)
         bars_lat = ax_lat.bar(x, y_lat, width=bar_width * 0.9, label=label)
@@ -295,48 +420,130 @@ def plot_efficiency(
                     continue
 
                 pct_bw = _safe_pct_delta(y_bw[i], ref_row.get("bw_mib_s_mean", 0))
-                if pct_bw is not None:
-                    sign = "+" if pct_bw >= 0 else ""
-                    ax_bw.annotate(
-                        f"{sign}{pct_bw:.1f}%",
-                        (bars_bw[i].get_x() + bars_bw[i].get_width() / 2, y_bw[i]),
-                        textcoords="offset points",
-                        xytext=(0, 4),
-                        ha="center",
-                        fontsize=7,
-                        rotation=90,
-                    )
-
                 pct_lat = _safe_pct_improvement_lower_is_better(
                     y_lat[i],
                     ref_row.get("p99_lat_us_mean", 0),
                 )
-                if pct_lat is not None:
-                    sign = "+" if pct_lat >= 0 else ""
-                    ax_lat.annotate(
-                        f"{sign}{pct_lat:.1f}%",
-                        (bars_lat[i].get_x() + bars_lat[i].get_width() / 2, y_lat[i]),
-                        textcoords="offset points",
-                        xytext=(0, 4),
-                        ha="center",
-                        fontsize=7,
-                        rotation=90,
-                    )
+                # Relative trends are shown in the third panel; keep top charts clean/readable.
+                if pct_bw is None or pct_lat is None:
+                    continue
+                ax_bw.annotate(
+                    f"{pct_bw:+.0f}%",
+                    (bars_bw[i].get_x() + bars_bw[i].get_width() / 2, y_bw[i]),
+                    textcoords="offset points",
+                    xytext=(0, 4),
+                    ha="center",
+                    fontsize=8,
+                )
+                ax_lat.annotate(
+                    f"{pct_lat:+.0f}%",
+                    (bars_lat[i].get_x() + bars_lat[i].get_width() / 2, y_lat[i]),
+                    textcoords="offset points",
+                    xytext=(0, 4),
+                    ha="center",
+                    fontsize=8,
+                )
+        else:
+            # Absolute IBM Power values for direct reading in the top panels.
+            for i in range(len(all_bs)):
+                ax_bw.annotate(
+                    f"{y_bw[i]:.1f}",
+                    (bars_bw[i].get_x() + bars_bw[i].get_width() / 2, y_bw[i]),
+                    textcoords="offset points",
+                    xytext=(0, 4),
+                    ha="center",
+                    fontsize=8,
+                )
+                ax_lat.annotate(
+                    f"{y_lat[i]:.1f}",
+                    (bars_lat[i].get_x() + bars_lat[i].get_width() / 2, y_lat[i]),
+                    textcoords="offset points",
+                    xytext=(0, 4),
+                    ha="center",
+                    fontsize=8,
+                )
 
     ax_bw.set_ylabel("Bandwidth (MiB/s)")
-    ax_bw.set_title(f"Efficiency sweep (fio write) — Bandwidth (% vs {ref_label})")
+    ax_bw.set_title(f"Efficiency sweep (fio write)\nBandwidth (absolute, log scale, % vs {ref_label})")
     ax_bw.set_xticks(range(n_bs))
     ax_bw.set_xticklabels(all_bs)
+    ax_bw.set_yscale("log")
     ax_bw.legend()
     ax_bw.grid(True, alpha=0.3)
 
     ax_lat.set_xticks(range(n_bs))
     ax_lat.set_xticklabels(all_bs)
-    ax_lat.set_xlabel("Block size")
     ax_lat.set_ylabel("p99 latency (µs)")
-    ax_lat.set_title(f"Efficiency sweep — p99 latency (% improvement vs {ref_label})")
+    ax_lat.set_title(f"Efficiency sweep\np99 latency (absolute, log scale, % improvement vs {ref_label})")
+    ax_lat.set_yscale("log")
     ax_lat.legend()
     ax_lat.grid(True, alpha=0.3)
+
+    # Third panel: simplified IBM-relative tipping view.
+    tip_summary = []  # (arch_label, worst_p99_ratio_x_vs_ibm, worst_p99_ms)
+    ibm_worst_us = None
+    by_arch_worst: dict[str, float] = {}
+    for eff_data, meta in sorted(filtered, key=lambda t: _arch_sort_key(_arch_label(t[1]))):
+        label = _arch_label(meta)
+        by_bs = by_block_size(eff_data)
+        vals = []
+        for bs in all_bs:
+            row = by_bs.get(bs)
+            if not row:
+                continue
+            lat_us = row.get("p99_lat_us_mean", 0)
+            vals.append(lat_us)
+        if not vals:
+            continue
+        worst_us = max(vals)
+        by_arch_worst[label] = worst_us
+        if "power" in label.lower():
+            ibm_worst_us = worst_us
+
+    if ibm_worst_us is None:
+        ibm_worst_us = max(by_arch_worst.values()) if by_arch_worst else 1.0
+    for label, worst_us in sorted(by_arch_worst.items(), key=lambda t: _arch_sort_key(t[0])):
+        ratio = _safe_ratio(worst_us, ibm_worst_us)
+        if ratio is None:
+            continue
+        tip_summary.append((label, ratio, worst_us / 1000.0))
+
+    labels = [r[0] for r in tip_summary]
+    ratios = [r[1] for r in tip_summary]
+    worst_ms_vals = [r[2] for r in tip_summary]
+    x_tip = list(range(len(labels)))
+    clip_cap = max(ratios) if ratios else 1.0
+    non_ibm = [r for l, r in zip(labels, ratios) if "power" not in l.lower()]
+    if non_ibm:
+        med = _median(non_ibm)
+        if max(ratios) > med * 1.5 and med > 0:
+            clip_cap = med * 1.5
+    shown = [min(v, clip_cap) for v in ratios]
+    bars = ax_tip.bar(x_tip, shown, color=[_arch_color(l) for l in labels], width=0.6)
+    ax_tip.set_xticks(x_tip)
+    ax_tip.set_xticklabels(labels, rotation=15, ha="right")
+    ax_tip.set_xlabel("Architecture")
+    ax_tip.set_ylabel("Worst-case p99 ratio vs IBM Power10 (x)")
+    ax_tip.set_title("Tipping-point decision view vs IBM Power10 (lower is better)")
+    ax_tip.set_ylim(0, max(shown) * 1.25 if shown else 1.25)
+    ax_tip.grid(True, axis="y", alpha=0.3)
+    for i, b in enumerate(bars):
+        is_ibm = "power" in labels[i].lower()
+        if is_ibm:
+            lbl = f"{worst_ms_vals[i]:.1f} ms"
+        else:
+            lbl = f"{worst_ms_vals[i]:.1f} ms\n{ratios[i]:.2f}x vs IBM"
+        if ratios[i] > shown[i]:
+            lbl += " *"
+        ax_tip.annotate(
+            lbl,
+            (b.get_x() + b.get_width() / 2, shown[i]),
+            textcoords="offset points",
+            xytext=(0, 4),
+            ha="center",
+            fontsize=8,
+        )
+    # Intentionally omit clipping disclaimer to keep panel visually simple.
 
     fig.tight_layout()
     if out_path:
@@ -353,19 +560,37 @@ def tipping_points(eff_data: list[dict], latency_threshold_us: float = 100_000) 
 
 def discover_result_paths(parent_dir: str) -> list[str]:
     """
-    Given a directory, return [parent_dir] plus any subdirs that contain result JSONs,
-    so that a single 'results' path can expand to results + results/Power10 + ...
+    Given a directory, return all nested dirs that contain:
+    - perf_run_*.json / processed_results.json
+    - ai_resilience_final.csv
+    - mttr_data.csv
+    This allows a single 'results' input path to work even with nested arch folders.
     """
     p = Path(parent_dir)
     if not p.is_dir():
         return []
-    paths = []
-    if find_result_jsons(str(p)):
-        paths.append(str(p))
-    for child in sorted(p.iterdir()):
-        if child.is_dir() and find_result_jsons(str(child)):
-            paths.append(str(child))
-    return paths
+    found_dirs: set[Path] = set()
+
+    # JSON-bearing directories (existing behavior, now recursive)
+    for json_file in p.rglob("perf_run_*.json"):
+        found_dirs.add(json_file.parent)
+    for json_file in p.rglob("processed_results.json"):
+        found_dirs.add(json_file.parent)
+
+    # AI and MTTR files that may live at architecture-root level
+    for ai_csv in p.rglob("ai_resilience_final.csv"):
+        found_dirs.add(ai_csv.parent)
+    for mttr_csv in p.rglob("mttr_data.csv"):
+        found_dirs.add(mttr_csv.parent)
+
+    # Drop parent directories when a nested child result directory exists,
+    # to avoid duplicate architecture traces in combined plots.
+    pruned = []
+    for d in sorted(found_dirs):
+        if any(other != d and d in other.parents for other in found_dirs):
+            continue
+        pruned.append(d)
+    return [str(d) for d in pruned]
 
 
 def load_mttr_csv(dir_path: str) -> list[float]:
@@ -432,79 +657,287 @@ def load_ai_csv(path: str) -> list[dict]:
     return rows
 
 
+def load_ai_csv_recursive(path: str) -> list[dict]:
+    """Load and combine all ai_resilience_final.csv files under a directory."""
+    p = Path(path)
+    if not p.is_dir():
+        return load_ai_csv(path)
+    rows: list[dict] = []
+    for ai_csv in sorted(p.rglob("ai_resilience_final.csv")):
+        rows.extend(load_ai_csv(str(ai_csv)))
+    return rows
+
+
 def ai_latest_per_arch(ai_rows: list[dict]) -> list[dict]:
-    """Keep latest Idle/Stressed pair per architecture/workload."""
-    by_arch: dict[tuple[str, str], dict[str, dict]] = defaultdict(dict)
+    """Aggregate AI metrics per architecture/workload (mean across runs)."""
+    by_arch: dict[tuple[str, str], dict[str, list[dict]]] = defaultdict(lambda: {"Idle": [], "Stressed": []})
     for row in ai_rows:
         key = (row["architecture"], row.get("workload", "unknown"))
-        by_arch[key][row["test_type"]] = row
+        by_arch[key][row["test_type"]].append(row)
 
     summary = []
     for (arch, workload), pair in sorted(by_arch.items()):
-        idle = pair.get("Idle")
-        stressed = pair.get("Stressed")
-        if not idle or not stressed:
+        idle_rows = pair.get("Idle", [])
+        stressed_rows = pair.get("Stressed", [])
+        if not idle_rows or not stressed_rows:
             continue
+        idle_avg_ms = sum(r["avg_latency_ms"] for r in idle_rows) / len(idle_rows)
+        stressed_avg_ms = sum(r["avg_latency_ms"] for r in stressed_rows) / len(stressed_rows)
+        idle_p99_ms = sum(r["p99_latency_ms"] for r in idle_rows) / len(idle_rows)
+        stressed_p99_ms = sum(r["p99_latency_ms"] for r in stressed_rows) / len(stressed_rows)
+        jitter_delta_ms = sum(r["jitter_delta_ms"] for r in stressed_rows) / len(stressed_rows)
+        loss_values = [r["efficiency_loss_pct"] for r in stressed_rows]
+        efficiency_loss_pct = _median(loss_values)
+        slowdown_factor = stressed_avg_ms / idle_avg_ms if idle_avg_ms else 0.0
+        absolute_delta_ms = stressed_avg_ms - idle_avg_ms
         summary.append(
             {
                 "architecture": arch,
                 "workload": workload,
-                "idle_avg_ms": idle["avg_latency_ms"],
-                "stressed_avg_ms": stressed["avg_latency_ms"],
-                "idle_p99_ms": idle["p99_latency_ms"],
-                "stressed_p99_ms": stressed["p99_latency_ms"],
-                "jitter_delta_ms": stressed["jitter_delta_ms"],
-                "efficiency_loss_pct": stressed["efficiency_loss_pct"],
+                "idle_avg_ms": idle_avg_ms,
+                "stressed_avg_ms": stressed_avg_ms,
+                "idle_p99_ms": idle_p99_ms,
+                "stressed_p99_ms": stressed_p99_ms,
+                "jitter_delta_ms": jitter_delta_ms,
+                "efficiency_loss_pct": efficiency_loss_pct,
+                "slowdown_factor": slowdown_factor,
+                "absolute_delta_ms": absolute_delta_ms,
+                "runs": min(len(idle_rows), len(stressed_rows)),
             }
         )
     return summary
 
 
 def plot_ai_resilience(ai_summary: list[dict], out_path: str | None = None) -> None:
-    """Plot AI resilience metrics by architecture."""
+    """Plot AI stress sensitivity metrics by architecture."""
     if not ai_summary:
         return
-    archs = [f"{r['architecture']} ({r.get('workload', 'unknown')})" for r in ai_summary]
+    ordered = sorted(ai_summary, key=lambda r: r["stressed_avg_ms"])
+    archs = [_ai_arch_display(r["architecture"]) for r in ordered]
+    arch_ticks = [a.replace(" (", "\n(") for a in archs]
     x = list(range(len(archs)))
     width = 0.35
 
-    fig, (ax_avg, ax_p99, ax_eff) = plt.subplots(3, 1, sharex=True, figsize=(max(7, len(archs) * 2.0), 10))
+    fig, (ax_avg, ax_p99, ax_eff) = plt.subplots(
+        3,
+        1,
+        sharex=False,
+        figsize=(max(14, len(archs) * 4.0), 12),
+        constrained_layout=True,
+    )
 
-    idle_avg = [r["idle_avg_ms"] for r in ai_summary]
-    stressed_avg = [r["stressed_avg_ms"] for r in ai_summary]
+    idle_avg = [r["idle_avg_ms"] for r in ordered]
+    stressed_avg = [r["stressed_avg_ms"] for r in ordered]
     ax_avg.bar([i - width / 2 for i in x], idle_avg, width=width, label="Idle")
     ax_avg.bar([i + width / 2 for i in x], stressed_avg, width=width, label="Stressed")
     ax_avg.set_ylabel("Avg latency (ms)")
-    ax_avg.set_title("AI resilience — Average latency by architecture/workload")
-    ax_avg.legend()
+    ax_avg.set_title("AI stress sensitivity — Average latency by architecture")
+    ax_avg.set_yscale("log")
     ax_avg.grid(True, axis="y", alpha=0.3)
+    ax_avg.yaxis.set_major_formatter(FuncFormatter(_ms_tick_formatter))
+    ax_avg.set_xticks(x)
+    ax_avg.set_xticklabels(arch_ticks, rotation=0, ha="center")
+    ax_avg.tick_params(axis="x", labelbottom=True, bottom=True, labeltop=False, top=False, pad=4)
+    for i in x:
+        ax_avg.annotate(
+            f"{idle_avg[i]:.3f} ms",
+            (i - width / 2, idle_avg[i]),
+            textcoords="offset points",
+            xytext=(0, 8),
+            ha="center",
+            fontsize=8,
+        )
+    for i in x:
+        pct = _safe_pct_delta(stressed_avg[i], idle_avg[i])
+        if pct is None:
+            continue
+        ax_avg.annotate(
+            f"{pct:+.1f}%",
+            (i + width / 2, stressed_avg[i]),
+            textcoords="offset points",
+            xytext=(0, 4),
+            ha="center",
+            fontsize=8,
+        )
 
-    idle_p99 = [r["idle_p99_ms"] for r in ai_summary]
-    stressed_p99 = [r["stressed_p99_ms"] for r in ai_summary]
+    idle_p99 = [r["idle_p99_ms"] for r in ordered]
+    stressed_p99 = [r["stressed_p99_ms"] for r in ordered]
     ax_p99.bar([i - width / 2 for i in x], idle_p99, width=width, label="Idle")
     ax_p99.bar([i + width / 2 for i in x], stressed_p99, width=width, label="Stressed")
     ax_p99.set_ylabel("p99 latency (ms)")
-    ax_p99.set_title("AI resilience — p99 latency by architecture/workload")
-    ax_p99.legend()
+    ax_p99.set_title("AI stress sensitivity — p99 latency by architecture")
+    ax_p99.set_yscale("log")
     ax_p99.grid(True, axis="y", alpha=0.3)
+    ax_p99.yaxis.set_major_formatter(FuncFormatter(_ms_tick_formatter))
+    ax_p99.set_xticks(x)
+    ax_p99.set_xticklabels(arch_ticks, rotation=0, ha="center")
+    ax_p99.tick_params(axis="x", labelbottom=True, bottom=True, labeltop=False, top=False, pad=4)
+    for i in x:
+        ax_p99.annotate(
+            f"{idle_p99[i]:.3f} ms",
+            (i - width / 2, idle_p99[i]),
+            textcoords="offset points",
+            xytext=(0, 8),
+            ha="center",
+            fontsize=8,
+        )
+    for i in x:
+        pct = _safe_pct_delta(stressed_p99[i], idle_p99[i])
+        if pct is None:
+            continue
+        ax_p99.annotate(
+            f"{pct:+.1f}%",
+            (i + width / 2, stressed_p99[i]),
+            textcoords="offset points",
+            xytext=(0, 4),
+            ha="center",
+            fontsize=8,
+        )
 
-    eff = [r["efficiency_loss_pct"] for r in ai_summary]
-    bars = ax_eff.bar(x, eff, width=0.6)
+    losses = [r["efficiency_loss_pct"] for r in ordered]
+    deltas = [r["absolute_delta_ms"] for r in ordered]
+    finite_losses = [v for v in losses if math.isfinite(v)]
+    median_loss = sorted(finite_losses)[len(finite_losses) // 2] if finite_losses else 0.0
+    max_loss = max(finite_losses) if finite_losses else 0.0
+    clip_cap = max_loss
+    if max_loss > (median_loss * 3.0) and median_loss > 0:
+        clip_cap = median_loss * 3.0
+    clipped_losses = [min(v, clip_cap) for v in losses]
+
+    bars = ax_eff.bar(x, clipped_losses, width=0.6)
     ax_eff.set_ylabel("Efficiency loss (%)")
-    ax_eff.set_title("AI resilience — Efficiency loss under stress by architecture/workload")
+    ax_eff.set_title("AI stress sensitivity — Efficiency loss under stress")
     ax_eff.grid(True, axis="y", alpha=0.3)
     for i, b in enumerate(bars):
-        ax_eff.annotate(f"{eff[i]:.1f}%", (b.get_x() + b.get_width() / 2, eff[i]), textcoords="offset points", xytext=(0, 4), ha="center", fontsize=8)
+        shown = clipped_losses[i]
+        actual = losses[i]
+        label = f"{actual:.1f}%"
+        ax_eff.annotate(
+            label,
+            (b.get_x() + b.get_width() / 2, shown),
+            textcoords="offset points",
+            xytext=(0, 4 if shown >= 0 else -12),
+            ha="center",
+            fontsize=8,
+        )
 
     ax_eff.set_xticks(x)
-    ax_eff.set_xticklabels(archs, rotation=15, ha="right")
+    ax_eff.set_xticklabels(arch_ticks, rotation=0, ha="center")
 
-    fig.tight_layout()
+    # constrained_layout handles spacing so x tick labels are not clipped.
     if out_path:
         fig.savefig(out_path, dpi=150)
         plt.close(fig)
     else:
         plt.show()
+
+
+def plot_ai_resilience_split(ai_summary: list[dict], out_dir: str) -> None:
+    """Generate separate AI stress sensitivity plots."""
+    if not ai_summary:
+        return
+    os.makedirs(out_dir, exist_ok=True)
+    width = 0.35
+
+    ordered_avg = sorted(ai_summary, key=lambda r: r["stressed_avg_ms"])
+    archs = [_ai_arch_display(r["architecture"]) for r in ordered_avg]
+    x = list(range(len(archs)))
+    idle_avg = [r["idle_avg_ms"] for r in ordered_avg]
+    stressed_avg = [r["stressed_avg_ms"] for r in ordered_avg]
+    fig, ax = plt.subplots(figsize=(max(8, len(archs) * 2.0), 4.8))
+    ax.bar([i - width / 2 for i in x], idle_avg, width=width, label="Idle")
+    ax.bar([i + width / 2 for i in x], stressed_avg, width=width, label="Stressed")
+    ax.set_title("AI stress sensitivity — Average latency")
+    ax.set_ylabel("Avg latency (ms)")
+    ax.set_yscale("log")
+    ax.set_xticks(x)
+    ax.set_xticklabels(archs, rotation=15, ha="right")
+    ax.legend()
+    ax.grid(True, axis="y", alpha=0.3)
+    ax.yaxis.set_major_formatter(FuncFormatter(_ms_tick_formatter))
+    for i in x:
+        pct = _safe_pct_delta(stressed_avg[i], idle_avg[i])
+        if pct is None:
+            continue
+        ax.annotate(
+            f"{pct:+.1f}%",
+            (i + width / 2, stressed_avg[i]),
+            textcoords="offset points",
+            xytext=(0, 4),
+            ha="center",
+            fontsize=8,
+        )
+    fig.tight_layout()
+    fig.savefig(os.path.join(out_dir, "ai_avg_latency.png"), dpi=160)
+    plt.close(fig)
+
+    ordered_p99 = sorted(ai_summary, key=lambda r: r["stressed_p99_ms"])
+    archs = [_ai_arch_display(r["architecture"]) for r in ordered_p99]
+    x = list(range(len(archs)))
+    idle_p99 = [r["idle_p99_ms"] for r in ordered_p99]
+    stressed_p99 = [r["stressed_p99_ms"] for r in ordered_p99]
+    fig, ax = plt.subplots(figsize=(max(8, len(archs) * 2.0), 4.8))
+    ax.bar([i - width / 2 for i in x], idle_p99, width=width, label="Idle")
+    ax.bar([i + width / 2 for i in x], stressed_p99, width=width, label="Stressed")
+    ax.set_title("AI stress sensitivity — p99 latency")
+    ax.set_ylabel("p99 latency (ms)")
+    ax.set_yscale("log")
+    ax.set_xticks(x)
+    ax.set_xticklabels(archs, rotation=15, ha="right")
+    ax.legend()
+    ax.grid(True, axis="y", alpha=0.3)
+    ax.yaxis.set_major_formatter(FuncFormatter(_ms_tick_formatter))
+    for i in x:
+        pct = _safe_pct_delta(stressed_p99[i], idle_p99[i])
+        if pct is None:
+            continue
+        ax.annotate(
+            f"{pct:+.1f}%",
+            (i + width / 2, stressed_p99[i]),
+            textcoords="offset points",
+            xytext=(0, 4),
+            ha="center",
+            fontsize=8,
+        )
+    fig.tight_layout()
+    fig.savefig(os.path.join(out_dir, "ai_p99_latency.png"), dpi=160)
+    plt.close(fig)
+
+    # Keep percentage-loss view, but clip y-axis for readability and annotate outliers.
+    ordered_loss = sorted(ai_summary, key=lambda r: r["efficiency_loss_pct"])
+    archs = [_ai_arch_display(r["architecture"]) for r in ordered_loss]
+    x = list(range(len(archs)))
+    losses = [r["efficiency_loss_pct"] for r in ordered_loss]
+    finite_losses = [v for v in losses if math.isfinite(v)]
+    median_loss = sorted(finite_losses)[len(finite_losses) // 2] if finite_losses else 0.0
+    max_loss = max(finite_losses) if finite_losses else 0.0
+    clip_cap = max_loss
+    if max_loss > (median_loss * 3.0) and median_loss > 0:
+        clip_cap = median_loss * 3.0
+    clipped_losses = [min(v, clip_cap) for v in losses]
+
+    fig, ax = plt.subplots(figsize=(max(8, len(archs) * 2.0), 4.8))
+    bars = ax.bar(x, clipped_losses, width=0.6)
+    ax.set_title("AI stress sensitivity — Efficiency loss %")
+    ax.set_ylabel("Efficiency loss (%)")
+    ax.set_xticks(x)
+    ax.set_xticklabels(archs, rotation=15, ha="right")
+    ax.grid(True, axis="y", alpha=0.3)
+    for i, b in enumerate(bars):
+        shown = clipped_losses[i]
+        actual = losses[i]
+        label = f"{actual:.1f}%"
+        ax.annotate(
+            label,
+            (b.get_x() + b.get_width() / 2, shown),
+            textcoords="offset points",
+            xytext=(0, 4 if shown >= 0 else -12),
+            ha="center",
+            fontsize=8,
+        )
+    fig.tight_layout()
+    fig.savefig(os.path.join(out_dir, "ai_efficiency_loss_readable.png"), dpi=160)
+    plt.close(fig)
 
 
 def plot_reliability(
@@ -521,6 +954,7 @@ def plot_reliability(
     means = []
     stds = []
     metas = []
+    sample_sets = []
     for mttr_samples, meta in datasets:
         if not mttr_samples:
             continue
@@ -530,25 +964,47 @@ def plot_reliability(
         means.append(m)
         stds.append(s)
         metas.append(meta)
+        sample_sets.append(mttr_samples)
 
     if not labels:
         return
 
-    ref_idx = _reference_dataset_index_from_meta(metas)
+    rows = sorted(zip(labels, means, stds, metas, sample_sets), key=lambda r: _arch_sort_key(r[0]))
+    labels = [r[0] for r in rows]
+    means = [r[1] for r in rows]
+    stds = [r[2] for r in rows]
+    metas = [r[3] for r in rows]
+    sample_sets = [r[4] for r in rows]
+
+    ref_idx = _reference_dataset_index_from_meta(metas, preferred="ppc64le")
     ref_label = labels[ref_idx]
     ref_mean = means[ref_idx]
 
-    fig, ax = plt.subplots()
-    x = list(range(len(labels)))
-    bars = ax.bar(x, means)
+    fig, ax = plt.subplots(figsize=(9, 5))
+    x = list(range(1, len(labels) + 1))
+    vp = ax.violinplot(sample_sets, positions=x, showmeans=False, showmedians=True, showextrema=False)
+    for body in vp["bodies"]:
+        body.set_alpha(0.4)
+    ci95 = [1.96 * (s / (len(sample_sets[i]) ** 0.5)) for i, s in enumerate(stds)]
+    ax.errorbar(x, means, yerr=ci95, fmt="o", color="black", capsize=4, label="Mean ±95% CI")
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation=15, ha="right")
     ax.set_ylabel("MTTR (s)")
-    ax.set_title(f"Reliability sweep (SIFI) — MTTR (% vs {ref_label})")
+    ax.set_title(f"Reliability sweep (SIFI) — MTTR distribution and confidence (% vs {ref_label})")
     ax.grid(True, axis="y", alpha=0.3)
+    ax.legend(loc="best")
 
     for i, label in enumerate(labels):
         if i == ref_idx:
+            ax.annotate(
+                f"{means[i]:.3f}s",
+                (i + 1, means[i]),
+                textcoords="offset points",
+                xytext=(0, 8),
+                ha="center",
+                fontsize=11,
+                bbox=dict(facecolor="white", edgecolor="none", alpha=0.8, pad=0.3),
+            )
             continue
         pct = _safe_pct_improvement_lower_is_better(means[i], ref_mean)
         if pct is None:
@@ -556,11 +1012,26 @@ def plot_reliability(
         sign = "+" if pct >= 0 else ""
         ax.annotate(
             f"{sign}{pct:.1f}%",
-            (bars[i].get_x() + bars[i].get_width() / 2, means[i]),
+            (i + 1, means[i]),
             textcoords="offset points",
-            xytext=(0, 4),
+            xytext=(0, 28),
             ha="center",
-            fontsize=8,
+            fontsize=12,
+            bbox=dict(facecolor="white", edgecolor="none", alpha=0.8, pad=0.5),
+        )
+
+    # Add explicit seconds labels for non-reference systems.
+    for i, label in enumerate(labels):
+        if i == ref_idx:
+            continue
+        ax.annotate(
+            f"{means[i]:.3f}s",
+            (i + 1, means[i]),
+            textcoords="offset points",
+            xytext=(0, 8),
+            ha="center",
+            fontsize=11,
+            bbox=dict(facecolor="white", edgecolor="none", alpha=0.8, pad=0.3),
         )
     fig.tight_layout()
     if out_path:
@@ -568,6 +1039,67 @@ def plot_reliability(
         plt.close(fig)
     else:
         plt.show()
+
+
+def plot_capability_per_arch(datasets: list[tuple[list[dict], dict]], out_dir: str) -> None:
+    """Generate one capability plot per architecture."""
+    os.makedirs(out_dir, exist_ok=True)
+    for cap_data, meta in datasets:
+        if not cap_data:
+            continue
+        by_scenario = defaultdict(list)
+        for row in cap_data:
+            by_scenario[row.get("scenario", "baseline")].append(row)
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        for scenario, rows in sorted(by_scenario.items()):
+            rows = sorted(rows, key=lambda r: r["threads"])
+            x = [r["threads"] for r in rows]
+            y = [r["ops_per_sec_mean"] for r in rows]
+            ax.plot(x, y, marker="o", label=scenario)
+        arch = _arch_label(meta)
+        ax.set_title(f"Capability sweep — {arch}")
+        ax.set_xlabel("Threads")
+        ax.set_ylabel("Bogo ops/s")
+        ax.legend(loc="best")
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        safe_arch = arch.lower().replace(" ", "_")
+        fig.savefig(os.path.join(out_dir, f"capability_{safe_arch}.png"), dpi=160)
+        plt.close(fig)
+
+
+def plot_efficiency_per_arch(datasets: list[tuple[list[dict], dict]], out_dir: str) -> None:
+    """Generate one efficiency plot (bandwidth + p99) per architecture."""
+    os.makedirs(out_dir, exist_ok=True)
+    for eff_data, meta in datasets:
+        if not eff_data:
+            continue
+        rows = [
+            r
+            for r in eff_data
+            if r.get("iodepth", 1) == 1 and r.get("numjobs", 1) == 1 and r.get("scenario", "baseline") == "baseline"
+        ] or eff_data
+        rows = sorted(rows, key=lambda r: r["block_size"])
+        blocks = [r["block_size"] for r in rows]
+        bw = [r["bw_mib_s_mean"] for r in rows]
+        lat = [r["p99_lat_us_mean"] for r in rows]
+
+        fig, (ax_bw, ax_lat) = plt.subplots(2, 1, sharex=True, figsize=(9, 7))
+        ax_bw.bar(blocks, bw, color="#4C78A8")
+        ax_bw.set_ylabel("Bandwidth (MiB/s)")
+        ax_bw.set_title(f"Efficiency bandwidth — {_arch_label(meta)}")
+        ax_bw.grid(True, axis="y", alpha=0.3)
+
+        ax_lat.bar(blocks, lat, color="#F58518")
+        ax_lat.set_ylabel("p99 latency (µs)")
+        ax_lat.set_title(f"Efficiency p99 latency — {_arch_label(meta)}")
+        ax_lat.set_xlabel("Block size")
+        ax_lat.grid(True, axis="y", alpha=0.3)
+        fig.tight_layout()
+        safe_arch = _arch_label(meta).lower().replace(" ", "_")
+        fig.savefig(os.path.join(out_dir, f"efficiency_{safe_arch}.png"), dpi=160)
+        plt.close(fig)
 
 
 def write_summary_tables(
@@ -670,12 +1202,15 @@ def write_ai_summary_table(ai_summary: list[dict], out_dir: str) -> None:
             fieldnames=[
                 "architecture",
                 "workload",
+                "runs",
                 "idle_avg_ms",
                 "stressed_avg_ms",
                 "idle_p99_ms",
                 "stressed_p99_ms",
                 "jitter_delta_ms",
                 "efficiency_loss_pct",
+                "slowdown_factor",
+                "absolute_delta_ms",
             ],
         )
         writer.writeheader()
@@ -696,6 +1231,7 @@ def analyze_and_plot(
     """
     if paths is None:
         paths = [path or "results"]
+    root_path_for_aux = paths[0] if len(paths) == 1 else None
     # If single directory: discover subdirs so "results" → results + results/Power10 + ...
     if len(paths) == 1 and Path(paths[0]).is_dir():
         resolved = discover_result_paths(paths[0])
@@ -724,6 +1260,12 @@ def analyze_and_plot(
             print(f"No result JSONs at {p}, skipping JSON plots for this path.")
 
         ai_rows = load_ai_csv(p)
+        if ai_rows:
+            ai_rows_all.extend(ai_rows)
+
+    # Also pick up AI CSVs recursively when single-root discovery prunes parent dirs.
+    if root_path_for_aux and Path(root_path_for_aux).is_dir():
+        ai_rows = load_ai_csv_recursive(root_path_for_aux)
         if ai_rows:
             ai_rows_all.extend(ai_rows)
 
@@ -764,7 +1306,11 @@ def analyze_and_plot(
     if out_dir:
         if datasets:
             write_summary_tables(datasets, mttr_datasets, out_dir)
+            detail_dir = os.path.join(out_dir, "detail")
+            plot_capability_per_arch(cap_datasets, detail_dir)
+            plot_efficiency_per_arch(eff_datasets, detail_dir)
         write_ai_summary_table(ai_summary, out_dir)
+        plot_ai_resilience_split(ai_summary, os.path.join(out_dir, "detail"))
         print(f"Summary tables saved under {out_dir}/")
 
     if save_basename and (cap_datasets or eff_datasets):

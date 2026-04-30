@@ -1,8 +1,20 @@
 architecture,scenario,duration_s,threads,ops_per_sec_mean,ops_per_sec_std
-Consumer Laptop,baseline,5,1,779.41,0.0
-Consumer Laptop,baseline,5,2,1477.43,0.0
-Consumer Laptop,baseline,5,4,2833.82,0.0
-Consumer Laptop,baseline,5,8,6681.42,0.0
+IBM Power10,baseline,5,1,579.0160333333333,4.958316205885559
+IBM Power10,baseline,5,2,1158.8859666666665,9.503678115584385
+IBM Power10,baseline,5,4,2316.0452666666665,17.46646668496748
+IBM Power10,baseline,5,8,4617.0914999999995,73.9889729021859
+Raspberry Pi 5,baseline,5,1,202.5461,1.665146515833343
+Raspberry Pi 5,baseline,5,2,391.44800000000004,8.932242809964444
+Raspberry Pi 5,baseline,5,4,610.1079,23.46789921414468
+Raspberry Pi 5,baseline,5,8,573.4251,16.811098396084304
+Raspberry Pi 5,io_concurrency,5,1,202.3714,1.695911911663224
+Raspberry Pi 5,io_concurrency,5,2,386.43160000000006,8.649725367275709
+Raspberry Pi 5,io_concurrency,5,4,596.6876,11.743903221190426
+Raspberry Pi 5,io_concurrency,5,8,563.6382,10.182964123644666
+Raspberry Pi 5,sustained,5,1,202.7155,1.530824941004033
+Raspberry Pi 5,sustained,5,2,386.3811,9.918458752765122
+Raspberry Pi 5,sustained,5,4,597.349,16.4163111482809
+Raspberry Pi 5,sustained,5,8,566.2318,12.380528650124988
 Consumer Laptop,baseline,5,1,1715.8652,233.52844860527512
 Consumer Laptop,baseline,5,2,3356.3485,485.2117747643634
 Consumer Laptop,baseline,5,4,6460.166133333333,952.2240405965476
