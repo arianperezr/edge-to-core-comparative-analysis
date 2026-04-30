@@ -52,3 +52,25 @@ Primary outputs
 - `results/<arch>_<timestamp>/perf_run_*.json`
 - `results/<arch>_<timestamp>/mttr_data.csv`
 - plot images and summary CSVs from `analysis/plotter.py`
+
+Finalized repository outputs (analysis/plots)
+--------------------------------------------
+The project is now in finalized state. Use these as the authoritative comparative results:
+
+- Plots:
+  - `plot_capability.png`
+  - `plot_efficiency.png`
+  - `plot_reliability.png`
+  - `plot_ai_resilience.png`
+- Summaries:
+  - `summary_capability.csv`
+  - `summary_efficiency.csv`
+  - `summary_reliability.csv`
+  - `summary_ai.csv`
+
+Final interpretation snapshot
+-----------------------------
+- Capability: Consumer Laptop has highest raw CPU throughput; Power10 shows cleaner linear scaling; Raspberry Pi 5 saturates by 4-8 threads.
+- Efficiency: Power10 dominates large-block fio bandwidth and preserves substantially better tail latency behavior than Raspberry Pi 5.
+- Reliability: Consumer Laptop has lowest mean MTTR, while Power10 provides the tightest MTTR spread (best determinism).
+- AI resilience: Power10 is most stress-stable (`+3.8%` loss), Raspberry Pi 5 is moderate (`+28.7%`), and Consumer Laptop is highly stress-sensitive (`+1362.0%`).

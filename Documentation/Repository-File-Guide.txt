@@ -79,9 +79,11 @@ analysis/plotter.py
         - plot_capability.png
         - plot_efficiency.png
         - plot_reliability.png
+        - plot_ai_resilience.png
         - summary_capability.csv
         - summary_efficiency.csv
         - summary_reliability.csv
+        - summary_ai.csv
 
 analysis/run_plotter.sh
   What: User-site-safe wrapper for running the plotter.
@@ -131,6 +133,10 @@ results/
         perf_run_<scenario>_<n>.json and optional mttr_data.csv. Plotter outputs
         can also be written under results/ or a custom -o directory.
 
+analysis/plots/
+  What: Finalized aggregate plots and summary CSVs for this completed project.
+  How:  Treat these files as the canonical final results set used for reporting.
+
 --------------------------------------------------------------------------------
 NOTES
 --------------------------------------------------------------------------------
@@ -141,5 +147,10 @@ NOTES
   FIO_RW, FIO_SIZE, and ENABLE_SIFI.
 - Two image tags may appear in scripts: edge-to-core/lab:latest (compose) and
   assurance-harness (collect script). Both come from testbenches/Dockerfile.
+- Finalized headline findings from analysis/plots:
+  - Capability: Consumer Laptop highest raw throughput; Power10 most linear scaling profile.
+  - Efficiency: Power10 best large-block bandwidth and strongest p99 latency control.
+  - Reliability: Consumer Laptop fastest mean MTTR; Power10 lowest MTTR variance.
+  - AI resilience: Power10 lowest stress loss (+3.8%) vs Raspberry Pi 5 (+28.7%) and x86_64 (+1362.0%).
 
 ================================================================================

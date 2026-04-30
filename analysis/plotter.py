@@ -278,7 +278,7 @@ def plot_capability(
     """Plot capability sweep (baseline-only) with percentage gain labels vs reference."""
     if not datasets:
         return
-    # Cross-architecture chart should compare a single scenario fairly.
+    # Compare apples-to-apples across architectures using the baseline scenario.
     baseline_only: list[tuple[list[dict], dict]] = []
     for cap_data, meta in datasets:
         rows = [r for r in cap_data if r.get("scenario", "baseline") == "baseline"]
@@ -308,7 +308,7 @@ def plot_capability(
             y = [r["ops_per_sec_mean"] for r in rows]
             ax.plot(x, y, marker="o", label=label)
 
-            # Annotate Consumer Laptop absolute bogo ops/s values for easier reading.
+            # Label the laptop points directly so the trend is easy to read.
             if _arch_label(meta) == "Consumer Laptop":
                 for r in rows:
                     ax.annotate(
@@ -360,7 +360,7 @@ def plot_efficiency(
     """Plot efficiency sweep with absolute and tipping-point views."""
     if not datasets:
         return
-    # Keep this plot focused on the baseline/default fio shape for readability.
+    # Start with the baseline fio shape so this view stays readable.
     filtered = []
     for eff_data, meta in datasets:
         rows = [
@@ -373,7 +373,7 @@ def plot_efficiency(
     if not filtered:
         filtered = datasets
 
-    # Union of block sizes across all archs, sorted numerically (e.g., 4k, 64k, 1M, 4M).
+    # Gather all block sizes across architectures and sort them numerically.
     all_bs = []
     seen_bs = set()
     for eff_data, _ in filtered:
@@ -389,7 +389,7 @@ def plot_efficiency(
     n_bs = len(all_bs)
     n_arch = len(filtered)
     bar_width = 0.8 / max(n_arch, 1)
-    # Offsets so bars are centered per block_size group
+    # Center each architecture's bar within its block-size group.
     offsets = [(i - (n_arch - 1) / 2) * bar_width for i in range(n_arch)]
 
     fig, (ax_bw, ax_lat, ax_tip) = plt.subplots(3, 1, figsize=(max(8, n_bs * 1.8), 11))
@@ -424,7 +424,7 @@ def plot_efficiency(
                     y_lat[i],
                     ref_row.get("p99_lat_us_mean", 0),
                 )
-                # Relative trends are shown in the third panel; keep top charts clean/readable.
+                # Save the full comparison story for the third panel to avoid clutter here.
                 if pct_bw is None or pct_lat is None:
                     continue
                 ax_bw.annotate(
@@ -444,7 +444,7 @@ def plot_efficiency(
                     fontsize=8,
                 )
         else:
-            # Absolute IBM Power values for direct reading in the top panels.
+            # Show IBM Power absolute values so the baseline is obvious at a glance.
             for i in range(len(all_bs)):
                 ax_bw.annotate(
                     f"{y_bw[i]:.1f}",
@@ -479,7 +479,7 @@ def plot_efficiency(
     ax_lat.legend()
     ax_lat.grid(True, alpha=0.3)
 
-    # Third panel: simplified IBM-relative tipping view.
+    # Third panel: compact tipping-point view relative to IBM Power10.
     tip_summary = []  # (arch_label, worst_p99_ratio_x_vs_ibm, worst_p99_ms)
     ibm_worst_us = None
     by_arch_worst: dict[str, float] = {}
@@ -543,7 +543,7 @@ def plot_efficiency(
             ha="center",
             fontsize=8,
         )
-    # Intentionally omit clipping disclaimer to keep panel visually simple.
+    # Skip extra clip labels to keep this panel clean.
 
     fig.tight_layout()
     if out_path:
@@ -571,20 +571,19 @@ def discover_result_paths(parent_dir: str) -> list[str]:
         return []
     found_dirs: set[Path] = set()
 
-    # JSON-bearing directories (existing behavior, now recursive)
+    # Pull JSON result folders recursively.
     for json_file in p.rglob("perf_run_*.json"):
         found_dirs.add(json_file.parent)
     for json_file in p.rglob("processed_results.json"):
         found_dirs.add(json_file.parent)
 
-    # AI and MTTR files that may live at architecture-root level
+    # AI and MTTR files can also live at the architecture root.
     for ai_csv in p.rglob("ai_resilience_final.csv"):
         found_dirs.add(ai_csv.parent)
     for mttr_csv in p.rglob("mttr_data.csv"):
         found_dirs.add(mttr_csv.parent)
 
-    # Drop parent directories when a nested child result directory exists,
-    # to avoid duplicate architecture traces in combined plots.
+    # If a child folder already has results, drop the parent to avoid duplicate traces.
     pruned = []
     for d in sorted(found_dirs):
         if any(other != d and d in other.parents for other in found_dirs):
@@ -1263,7 +1262,7 @@ def analyze_and_plot(
         if ai_rows:
             ai_rows_all.extend(ai_rows)
 
-    # Also pick up AI CSVs recursively when single-root discovery prunes parent dirs.
+    # Pick up AI CSVs recursively in case root-level discovery was pruned.
     if root_path_for_aux and Path(root_path_for_aux).is_dir():
         ai_rows = load_ai_csv_recursive(root_path_for_aux)
         if ai_rows:

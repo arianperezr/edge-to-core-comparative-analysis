@@ -49,7 +49,7 @@ def _run_inference_loop(
         start = time.perf_counter()
         _dense_forward(batch, w1, b1, w2, b2)
         end = time.perf_counter()
-        # Normalize to per-sample latency for fair cross-batch comparison.
+        # Convert to per-sample latency so runs are comparable across batch sizes.
         latencies_ms.append((end - start) * 1000.0 / batch_size)
     return latencies_ms
 
@@ -89,7 +89,7 @@ def _stop_stressor(proc: subprocess.Popen | None) -> None:
     if total_timeout_s <= 0:
         total_timeout_s = 1.0
 
-    # Explicit timeout partition so SIGKILL always has a real budget.
+    # Split timeout budget so force-kill always has some headroom.
     force_kill_share = _read_float_env("STRESSOR_FORCE_KILL_SHARE", 0.25)
     if force_kill_share < 0.05:
         force_kill_share = 0.05

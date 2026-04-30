@@ -49,3 +49,22 @@ This document captures the highest-priority verification risks identified during
   - AI validation is integrated into `final_run.sh` by default, with explicit controls:
     - `./final_run.sh --ai-only` (AI-only path for missing data backfill)
     - `./final_run.sh --skip-ai` (legacy collection path without AI phase)
+
+## Final Evidence Snapshot (Project Finalized)
+
+Finalized outputs in `analysis/plots/` provide measurable evidence that the above mitigations produced stable, interpretable comparison data:
+
+- `summary_ai.csv`:
+  - `ppc64le` (Power10) stress efficiency loss: `+3.8%`
+  - `aarch64` (Raspberry Pi 5): `+28.7%`
+  - `x86_64` (Consumer Laptop): `+1362.0%`
+  - Interpretation: the AI stress harness successfully distinguishes deterministic vs stress-sensitive behavior.
+- `summary_reliability.csv`:
+  - Power10 MTTR mean/std: `4.9137s / 0.9181s`
+  - Consumer Laptop MTTR mean/std: `4.4065s / 0.9982s`
+  - Raspberry Pi 5 MTTR mean/std: `5.0818s / 1.2554s`
+  - Interpretation: host-clock MTTR controls preserve cross-platform comparability with quantified variance.
+- `summary_efficiency.csv` (baseline view):
+  - Power10 large-block bandwidth: `2857.5 MiB/s (1M)`, `4379.7 MiB/s (4M)`
+  - Power10 p99 latency remains materially lower than Raspberry Pi 5 at large blocks.
+  - Interpretation: sustained and scenario-tagged aggregation supports visible tipping-point behavior.

@@ -117,6 +117,12 @@ Include:
 - Consumer laptop vs IBM Power10 key deltas
 - Edge vs commodity vs enterprise tradeoff snapshot
 
+### 4.5 AI Stress Sensitivity Results
+Include:
+- Figure/table references for `plot_ai_resilience.png` and `summary_ai.csv`
+- Idle vs stressed latency comparison (average and p99)
+- Efficiency loss interpretation by architecture
+
 ---
 
 ## 5. Discussion
@@ -204,6 +210,11 @@ Use a consistent style (APA/IEEE/ACM). Include:
 | Platform | MTTR Samples | MTTR Mean (s) | MTTR Std (s) |
 |---|---:|---:|---:|
 | [ ] | [ ] | [ ] | [ ] |
+
+### Table E. AI Stress Sensitivity Summary
+| Architecture | Workload | Idle Avg (ms) | Stressed Avg (ms) | Idle p99 (ms) | Stressed p99 (ms) | Efficiency Loss (%) |
+|---|---|---:|---:|---:|---:|---:|
+| [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
 
 ---
 

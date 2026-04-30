@@ -73,6 +73,42 @@ For repeatability of comparative analysis, the enterprise tier documentation ass
 - SIFI recovery series: `mttr_data.csv` (scenario-tagged as `scenario,seconds`)
 - AI resilience CSV: `results/ai_resilience_final.csv` with
   `Architecture,Test_Type,Average_Latency,p99_Latency,Jitter_Delta,Efficiency_Loss_Pct,Workload`
-- Plots: capability, efficiency, reliability PNG files
-- Summary tables: `summary_capability.csv`, `summary_efficiency.csv`, `summary_reliability.csv`
+- Plots: capability, efficiency, reliability, and AI resilience PNG files
+- Summary tables: `summary_capability.csv`, `summary_efficiency.csv`, `summary_reliability.csv`, `summary_ai.csv`
+
+## Finalized Results Snapshot
+
+The repository now includes finalized comparative outputs in `analysis/plots/`.
+
+- Canonical figures:
+  - `analysis/plots/plot_capability.png`
+  - `analysis/plots/plot_efficiency.png`
+  - `analysis/plots/plot_reliability.png`
+  - `analysis/plots/plot_ai_resilience.png`
+- Canonical summary tables:
+  - `analysis/plots/summary_capability.csv`
+  - `analysis/plots/summary_efficiency.csv`
+  - `analysis/plots/summary_reliability.csv`
+  - `analysis/plots/summary_ai.csv`
+
+### Final Findings (Condensed)
+
+- **Capability (stress-ng, baseline):**
+  - Consumer Laptop leads raw throughput and scales to `11050.95` bogo ops/s at 8 threads.
+  - IBM Power10 scales near-linearly to `4617.09` bogo ops/s at 8 threads.
+  - Raspberry Pi 5 reaches `610.11` at 4 threads and declines to `573.43` at 8 threads (early saturation).
+- **Efficiency (fio write, baseline):**
+  - IBM Power10 provides the best combined profile for large blocks:
+    - `4379.74 MiB/s` at `4M` and `2857.52 MiB/s` at `1M`
+    - lower p99 tails than Raspberry Pi 5 by two orders of magnitude at large blocks.
+  - Consumer Laptop is second in bandwidth, but with materially higher p99 tails at large blocks.
+  - Raspberry Pi 5 shows severe p99 latency inflation at `1M`/`4M` despite modest bandwidth.
+- **Reliability (SIFI MTTR):**
+  - Consumer Laptop has the fastest mean MTTR (`4.4065s`).
+  - IBM Power10 mean MTTR is `4.9137s` with the tightest variance (`std 0.9181s`).
+  - Raspberry Pi 5 has highest MTTR mean (`5.0818s`) and highest variance (`std 1.2554s`).
+- **AI stress sensitivity (dense MLP):**
+  - Power10: `+3.8%` efficiency loss (most stable under stress).
+  - Raspberry Pi 5: `+28.7%` efficiency loss.
+  - Consumer Laptop: `+1362.0%` efficiency loss with large tail-latency expansion under stress.
 
