@@ -28,7 +28,7 @@ Use these commands on a new machine before the first benchmark run.
 1) Install base dependencies (Debian/Ubuntu):
 
 - `sudo apt update`
-- `sudo apt install -y git docker.io bc python3 python3-venv`
+- `sudo apt install -y git docker.io bc python3`
 - `sudo usermod -aG docker "$USER"` (log out/in once after this)
 
 2) Clone and enter the project:
@@ -53,9 +53,7 @@ Use these commands on a new machine before the first benchmark run.
 
 6) Optional: install plotting dependencies:
 
-- `python3 -m venv .venv`
-- `source .venv/bin/activate`
-- `pip install -r analysis/requirements.txt`
+- `python3 -m pip install --user --break-system-packages -r analysis/requirements.txt`
 - `./analysis/run_plotter.sh results -o analysis/plots --no-show`
 
 

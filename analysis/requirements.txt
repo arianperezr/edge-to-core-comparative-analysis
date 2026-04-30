@@ -1,4 +1,4 @@
-# Install in a venv to avoid system "externally-managed-environment" errors:
-#   python3 -m venv .venv && source .venv/bin/activate && pip install -r analysis/requirements.txt
+# Install with user-site packages to avoid system "externally-managed-environment" errors:
+#   python3 -m pip install --user --break-system-packages -r analysis/requirements.txt
 # Or use: ./analysis/run_plotter.sh results -o analysis/plots --no-show
 matplotlib>=3.7.0

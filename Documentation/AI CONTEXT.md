@@ -151,7 +151,7 @@ These values are encoded in `core/discovery.py` for Power10 metadata.
 - `core/main.py` -> benchmark execution and result writing
 - `core/discovery.py` -> architecture classification and enterprise assumptions
 - `analysis/plotter.py` -> aggregation, plotting, summary CSV generation
-- `analysis/run_plotter.sh` -> venv-safe plot runner
+- `analysis/run_plotter.sh` -> user-site-safe plot runner
 - `testbenches/Dockerfile` -> container definition
 - `Documentation/Project Overview` -> mission/scope/workflow summary
 - `Documentation/Repository-File-Guide.txt` -> file-by-file guide

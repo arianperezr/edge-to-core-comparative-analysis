@@ -84,8 +84,8 @@ analysis/plotter.py
         - summary_reliability.csv
 
 analysis/run_plotter.sh
-  What: Venv-safe wrapper for running the plotter.
-  How:  Creates/uses .venv, installs requirements, and invokes plotter.py.
+  What: User-site-safe wrapper for running the plotter.
+  How:  Installs requirements to the local Python user base and invokes plotter.py.
 
 analysis/requirements.txt
   What: Analysis dependencies (currently matplotlib).
