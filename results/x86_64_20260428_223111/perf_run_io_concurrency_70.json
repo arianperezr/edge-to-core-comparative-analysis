@@ -1,0 +1,47 @@
+{
+    "metadata": {
+        "isa": "x86_64",
+        "type": "Consumer Laptop",
+        "is_enterprise": false
+    },
+    "capability_sweep": [
+        {
+            "threads": 1,
+            "ops_per_sec": 1771.27
+        },
+        {
+            "threads": 2,
+            "ops_per_sec": 3308.04
+        },
+        {
+            "threads": 4,
+            "ops_per_sec": 6144.02
+        },
+        {
+            "threads": 8,
+            "ops_per_sec": 11017.47
+        }
+    ],
+    "efficiency_sweep": [
+        {
+            "block_size": "4k",
+            "bw_mib_s": 24.0155086517334,
+            "p99_lat_us": 276.48
+        },
+        {
+            "block_size": "64k",
+            "bw_mib_s": 270.2584476470947,
+            "p99_lat_us": 1286.144
+        },
+        {
+            "block_size": "1M",
+            "bw_mib_s": 2010.3979196548462,
+            "p99_lat_us": 1056.768
+        },
+        {
+            "block_size": "4M",
+            "bw_mib_s": 2693.8612270355225,
+            "p99_lat_us": 5734.4
+        }
+    ]
+}

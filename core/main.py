@@ -93,7 +93,7 @@ def _run_efficiency_sweep(
                     ),
                     flush=True,
                 )
-                subprocess.run(
+                result = subprocess.run(
                     [
                         "fio",
                         "--name=bench",
