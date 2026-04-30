@@ -29,3 +29,23 @@ This document captures the highest-priority verification risks identified during
   - `threading_policy: "SMT1"`
   - `sockets: 8`
 - These fields flow into benchmark metadata through `core/main.py` (`metadata` merges architecture details from discovery).
+
+## Risk 3: AI Inference Determinism Under I/O Stress
+
+- **Risk statement:** Inference latency can degrade or become unstable when storage pressure is present, masking memory-wall behavior and hypervisor-side scheduling effects.
+- **Impact:** Medium-High. This affects confidence in workload stability comparisons across `arm64`, `x86_64`, and `ppc64le`.
+- **Implemented mitigations:**
+  - Dedicated AI validation harness in `core/ai_inference_test.py` with two phases:
+    - Idle: 1,000 inferences baseline
+    - Stressed: 1,000 inferences during I/O stress (`fio` with `4M` blocks, fallback `stress-ng`)
+  - High-resolution latency timing uses `time.perf_counter()` to reduce clock precision issues in KVM guests.
+  - Results are appended to `results/ai_resilience_final.csv` via `run_ai_validation.sh`, using fields:
+    - `Architecture`
+    - `Test_Type` (`Idle` / `Stressed`)
+    - `Average_Latency`
+    - `p99_Latency`
+    - `Jitter_Delta`
+    - `Efficiency_Loss_Pct`
+  - AI validation is integrated into `final_run.sh` by default, with explicit controls:
+    - `./final_run.sh --ai-only` (AI-only path for missing data backfill)
+    - `./final_run.sh --skip-ai` (legacy collection path without AI phase)

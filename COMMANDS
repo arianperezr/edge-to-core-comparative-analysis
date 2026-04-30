@@ -2,3 +2,6 @@ docker build -t assurance-harness -f testbenches/Dockerfile .
 ITERATIONS=1 SCENARIOS=baseline ./collect_data.sh
 ITERATIONS=10 SCENARIOS=baseline,sustained,io_concurrency ./collect_data.sh
 ./final_run.sh
+./final_run.sh --ai-only
+./final_run.sh --skip-ai
+./run_ai_validation.sh
