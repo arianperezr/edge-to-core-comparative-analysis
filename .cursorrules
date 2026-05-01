@@ -1,9 +1,0 @@
-Project Rules:
-
-Always consider multi-arch support (amd64, arm64, ppc64le) for Docker builds.
-
-Use fabric for orchestration and polars for data processing.
-
-When writing perf or eBPF scripts, prioritize high-resolution MTTR metrics.
-
-Hardware Lab: Edge (Pi 5), Commodity (x86), Enterprise (Power10
