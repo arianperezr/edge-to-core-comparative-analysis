@@ -1,12 +1,15 @@
-# Enterprise ISA Resilience
+# Cross-Architecture System Validation: Edge-to-Core Performance, Reliability, and AI Workload Resilience
 
-This repository contains an automated validation harness that compares edge, commodity, and enterprise architectures across three pillars:
+This repository contains an automated validation harness that compares edge, commodity, and enterprise architectures across four pillars:
 
-- Capability: CPU scaling under load (`stress-ng`)
-- Efficiency: I/O behavior across block sizes (`fio`)
-- Reliability: MTTR under Software-Implemented Fault Injection (SIFI)
+- **Capability:** CPU scaling under load (`stress-ng`)
+- **Efficiency:** I/O behavior across block sizes (`fio`)
+- **Reliability:** mean time to recovery (MTTR) under Software-Implemented Fault Injection (SIFI)
+- **AI workload resilience:** inference stress testing for a matrix-heavy dense MLP—baseline vs concurrent storage stress—to compare average and p99 latency, jitter, and efficiency loss across tiers
 
-The current implementation is a validation framework for cross-architecture tipping-point behavior, including virtualized enterprise conditions (Power10 on ppc64le in lab-controlled KVM environments).
+AI inference validation is implemented in `core/ai_inference_test.py`, driven by `run_ai_validation.sh`, and runs by default as the last phase of `./final_run.sh` (use `--skip-ai` or `--ai-only` to change that).
+
+The harness targets cross-architecture tipping-point behavior, including virtualized enterprise conditions (Power10 on `ppc64le` in lab-controlled KVM environments).
 
 The current target lab tiers are:
 
